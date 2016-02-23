@@ -1,0 +1,598 @@
+import numpy as np
+from scipy import interpolate
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import getpass
+import json, requests
+import IPython.display
+import ipywidgets
+import ast
+import abc
+import sys
+
+
+
+class MassRangeReductionStrategy:
+    __metaclass__ = abc.ABCMeta
+
+    @abc.abstractmethod
+    def reduceImage(self,data):
+        pass
+
+class PeakArea(MassRangeReductionStrategy):
+    def reduceImage(self,data):
+        return np.sum(data,2)
+
+class PeakHeight(MassRangeReductionStrategy):
+    def reduceImage(self,data):
+        return np.max(data,2)
+
+class AreaNearPeak(MassRangeReductionStrategy):
+    """in stead of simply taking the sum or the max to get the "size" of a peak, this code finds the peak within a range and
+        sums the data points 'halfpeakwidth' to the left and to the right of the peak
+        if there is no peak, the boundary condition ends up being that it just takes the first halfpeakwidth+1 datapoints in the range
+        but if there is no peak, we assume this value is very low anyways"""
+    def __init__(self,halfpeakwidth=2):
+        self.halfpeakwidth=halfpeakwidth
+
+    def reduceImage(self,data):
+        result = np.zeros((data.shape[0],data.shape[1]))
+        maxMasses = np.argmax(data,2)
+        for x in range(data.shape[0]):
+            for y in range(data.shape[1]):
+                peak=(range(-self.halfpeakwidth,self.halfpeakwidth+1)+maxMasses[x,y]).astype(int)
+                for p in peak:
+                    if p<0:
+                        continue
+                    if p>= data.shape[2]:
+                        continue
+                    result[x,y]+=data[x,y,p]
+        return result
+
+class ArrayedImage(object):
+    def __init__(self,originalSize,ions,filename,expIndex,dataIndex,mz):
+        self.imStack = np.zeros((originalSize[0],originalSize[1],len(ions)))
+        self.originalSize=originalSize
+        self.ions=ions
+        self.mz=mz
+        self.filename=filename
+        self.expIndex=expIndex
+        self.dataIndex=dataIndex
+        self.baseImage=None
+        self.xCenters=None
+        self.yCenters=None
+
+
+    def roughPosition(self,Nx,Ny,dragRadius=4,pointMarkerSize=12,colormap='gray'):
+        bkImage=self.baseImage
+        fig = plt.figure()
+        fig.set_facecolor('white')
+        ax = fig.add_subplot(111)
+        plt.imshow(bkImage,colormap)
+
+    #     ax.set_xlim(2,7)
+    #     ax.set_ylim(0,3)
+        ax.set_aspect('equal')
+        xPos = [0,bkImage.shape[1]]
+        xPos = [0,bkImage.shape[0]]
+        circles = []
+        circles.append(patches.Circle((0,0), dragRadius, fc='r', alpha=0.5, ))
+        circles.append(patches.Circle((0,bkImage.shape[0]), dragRadius, fc='r', alpha=0.5, ))
+        circles.append(patches.Circle((bkImage.shape[1],0), dragRadius, fc='r', alpha=0.5, ))
+        circles.append(patches.Circle((bkImage.shape[1],bkImage.shape[0]), dragRadius, fc='r', alpha=0.5, ))
+
+    #     for i in range(2):
+    #         for j in range(2):
+    #             circles.append(patches.Circle((3*(i+1),j+1), 0.14, fc='r', alpha=0.5, ))
+
+
+        p = []
+        for d in circles:
+            p.append(d.center)
+        p = np.asarray(p)
+
+        xi,yi = barycentric_trapezoidial_interpolation(Nx,Ny,p)
+
+        h1, = ax.plot(xi,yi,'.',markersize=pointMarkerSize)
+
+        drs = []
+        for circ in circles:
+            ax.add_patch(circ)
+            dr = DraggablePointForBarycentricInterpolation(circ,h1,ax, Nx, Ny)
+            dr.connect()
+            drs.append(dr)
+
+        plt.show()
+
+        self.xCenters=h1.get_xdata()
+        self.yCenters=h1.get_ydata()
+
+        print "new spot x and y locations have been saved."
+
+
+    def fineTunePosition(self,markerRadius=2,colormap='gray'):
+        fig = plt.figure()
+        fig.set_facecolor('white')
+        ax = fig.add_subplot(111)
+        plt.imshow(self.baseImage,cmap=colormap)
+    #     ax.set_xlim(np.min(xRough)-1,np.max(xRough)+1)
+    #     ax.set_ylim(np.min(yRough)-1,np.max(yRough)+1)
+        # print max(yRough)
+        # print np.max(yRough)
+        # ax.set_xlim(min(xRough)-10,max(xRough)+10)
+        # ax.set_ylim(min(yRough)+10,max(yRough)+10)
+        ax.set_aspect('equal')
+        # circles = [patches.Circle((0.32, 0.3), 0.03, fc='r', alpha=0.5),
+        #                patches.Circle((0.3,0.3), 0.03, fc='g', alpha=0.5)]
+
+        xRough=self.xCenters
+        yRough=self.yCenters
+
+
+        drs = []
+        circles = []
+        L = len(xRough)
+        for i in range(L):
+            circles.append(patches.Circle((xRough[i],yRough[i]), markerRadius, fc='b', alpha=0.5, ))
+
+        for circ in circles:
+            ax.add_patch(circ)
+            dr = DraggablePoint(circ)
+            dr.connect()
+            drs.append(dr)
+
+        plt.show()
+        xFine = []
+        yFine = []
+        for c in circles:
+            xFine.append(c.center[0])
+            yFine.append(c.center[1])
+
+
+        self.xCenters=xFine
+        self.yCenters=yFine
+        print "new spot x and y locations have been saved."
+
+
+
+    def optimizeSpots(self,
+                      halfboxsize=2,
+                      optimizationrounds=3,
+                      integrationRadius=2,
+                      avoidOverlaps=True,
+                      pixelwiseOverlapAvoidance=False,
+                      overlapDistance_squared=None,
+                      verbose=False,
+                      raiseExceptions=False,
+                      minimumScore=0):
+        if not overlapDistance_squared:
+            overlapDistance_squared=(integrationRadius+1)**2
+
+        imStack2=self.imStack
+
+        imWidth=imStack2.shape[1]
+        imHeight=imStack2.shape[0]
+        xEdges, yEdges = np.meshgrid(range(imWidth), range(imHeight), sparse=False, indexing='xy')
+
+        xCenter=self.xCenters
+        yCenter=self.yCenters
+
+        numberOfSpots=len(xCenter)
+        spotMaskCache=np.empty(numberOfSpots, dtype=np.ndarray)
+        ionWeighting=np.empty(len(self.ions))
+        ionWeighting.fill(1.)
+        for round in range(optimizationrounds):
+            totalscore=0
+            minscore=-1
+            maxscore=-1
+            for i in range(numberOfSpots):
+                    best=0
+                    bestX=xCenter[i]
+                    bestY=yCenter[i]
+                    for newX in (range(-halfboxsize,halfboxsize+1)+xCenter[i]):
+                        for newY in (range(-halfboxsize,halfboxsize+1)+yCenter[i]):
+                            if newX<0 or newX>=imWidth or newY<0 or newY>=imHeight:
+                                if(raiseExceptions):
+                                    raise IndexError("a location outside of the image was tried for a spot")
+                                else:
+                                    if(verbose):
+                                        print "a location outside of the image was tried for spot #",i,", but ignored"
+                                    continue
+                            currentSpot=oneSpotMask(xEdges,yEdges,newX,newY,integrationRadius)
+                            assert (len(currentSpot)>0)
+                            if avoidOverlaps:
+                                if pixelwiseOverlapAvoidance:
+                                    if doesThisOverlap_pixelwise(spotMaskCache,currentSpot,i,numberOfSpots):
+                                        continue
+                                elif doesThisOverlap_distancewise(newX,newY,xCenter,yCenter,i,overlapDistance_squared):
+                                    continue
+
+                            #because of the way the spot is defined, it's not always the same number of pixels,
+                            #so we devide by the size of the spot to get the /average/ intensity
+                            result=sum(sumPixels(currentSpot,imStack2)*ionWeighting)/len(currentSpot)
+                            spotMaskCache[i]=currentSpot
+                            if result>best:
+                                best=result
+                                bestX=newX
+                                bestY=newY
+
+                    if(best>minimumScore):
+                        xCenter[i]=bestX
+                        yCenter[i]=bestY
+                    else:
+                        if raiseExceptions or best<=0: #if the score is <=0 something bad must be going on
+                            raise SpotOptimizationException()
+                        elif(verbose):
+                            print "Score of spot #",i,"is",int(best),", but need >",minimumScore,". Location stays as it was before."
+                    if(verbose): #to get the stats for this round
+                        totalscore+=best
+                        if(minscore==-1):
+                            minscore=best
+                        minscore=min(minscore,best)
+                        maxscore=max(maxscore,best)
+                        cyclenumber = numberOfSpots*round+i
+                        if(cyclenumber%100==99):
+                            print "{:d}% done with the optimization process".format(int(100*cyclenumber/(numberOfSpots*optimizationrounds)))
+                            sys.stdout.flush()
+            print "done with optimization round",round+1,"of",optimizationrounds
+            if(verbose):
+                print "total score:",totalscore,"\t average spot score:",totalscore/numberOfSpots
+                print "low spot score:",minscore,"\t high spot score:",maxscore
+            sys.stdout.flush()
+
+        self.xCenters=xCenter
+        self.yCenters=yCenter
+        print "optimization routine completed. new spot x and y positions saved."
+        sys.stdout.flush()
+
+
+
+
+class OpenMSIsession(object):
+
+
+    def __init__(self,username):
+        """you won't want to call the constructor, use the 'login' function
+        to create an OpenMSIsession object"""
+        self.requests_session = requests.Session()
+        self.username=username
+        self.filename=None
+
+
+    def getFilelist(self):
+        payload = {'format':'JSON','mtype':'filelistView'}
+        url = 'https://openmsi.nersc.gov/openmsi/qmetadata'
+        r = self.requests_session.get(url,params=payload)
+        r.raise_for_status()
+        fileList = json.loads(r.content)
+        return fileList.keys()
+
+
+
+
+    def fileSelector(self):
+        """
+
+        :return: An ipython widget containing a file selector. If you simply have this method as the last
+                    line of a notebook cell, you'll see it. otherwise you need to do IPython.display.display(fileSelector())
+        """
+        global arrayed_analysis_default_filename #variable /has/ to be declared global if you want to use the %store magic
+        myFiles = self.getFilelist()
+        myFiles.sort()
+        arrayed_analysis_default_filename = myFiles[0]
+        %store -r arrayed_analysis_default_filename
+        fileSelector=ipywidgets.widgets.Select(options=myFiles, width=800, height=400)
+        try:
+            fileSelector.value=arrayed_analysis_default_filename
+        except KeyError:
+            fileSelector.value=myFiles[0]
+
+        title=ipywidgets.widgets.HTML(value="Pick the file you want to load here") #IPN2: HTMLWidget
+        #IPython.display.display(title)
+        #IPython.display.display(fileSelector)
+        def _fileSelector_updated():
+            global arrayed_analysis_default_filename
+            self.filename=fileSelector.value
+            arrayed_analysis_default_filename = self.filename
+            %store arrayed_analysis_default_filename
+        fileSelector.on_trait_change(_fileSelector_updated)
+        _fileSelector_updated()
+        return ipywidgets.Box(children=(title,fileSelector))
+
+
+    def getArrayedImage(self,ions,massRange,filename=None,massRangeReductionStrategy=PeakArea(),expIndex=0,dataIndex=0,verbose=True):
+        """
+        :param filename: if this is not set, it'll use the filename selected in the file selector.
+                        if no filename is selected there, a ValueError exception will be raised
+        :return:
+        """
+        if filename:
+            self.filename=filename
+        elif not self.filename:
+            raise ValueError("Either the filename needs to be set in the arguments, or a file must have been selected in the file selector.")
+
+
+
+        payload = {'file':self.filename,'format':'JSON','mtype':'file','expIndex':expIndex,'dataIndex':dataIndex}
+        url = 'https://openmsi.nersc.gov/openmsi/qmetadata'
+        r = self.requests_session.get(url,params=payload)
+        r.raise_for_status()
+        metadata = json.loads(r.content)
+        originalSize = ast.literal_eval(metadata[u'children'][0][u'shape'])
+
+        newImage=ArrayedImage(originalSize,ions,self.filename,expIndex,dataIndex,getMZ(self.requests_session,self.filename,expIndex,dataIndex))
+        #The new ArrayedImage returned has an empty imStack
+        #To populate it, first we'll download the raw data and then reduce it into one slice for every ion
+
+        for i,ion in enumerate(newImage.ions):
+            if(verbose):
+                print "loading ion {:d} of {:d}. m/z = {:f}".format(i,len(newImage.ions),ion)
+                sys.stdout.flush()
+            idx = np.where(abs(newImage.mz-ion)<massRange) #get the m/z indices within myRange
+            if(len(idx[0])<=0):
+                raise ValueError("Ion {:f} not present in the file {}".format(ion,newImage.filename))
+            payload = {'file':newImage.filename,
+                       'expIndex':expIndex,'dataIndex':dataIndex,'format':'JSON','mz':'%d:%d'%(min(idx[0]),max(idx[0]))}
+            url = 'https://openmsi.nersc.gov/openmsi/qcube'
+            r = self.requests_session.get(url,params=payload)
+            r.raise_for_status()
+            data = np.asarray(json.loads(r.content))
+
+            newImage.imStack[:,:,i] = massRangeReductionStrategy.reduceImage(data)
+
+        newImage.baseImage = np.sum(newImage.imStack,2)
+        print "Image has been loaded."
+        sys.stdout.flush()
+        return newImage
+
+
+
+
+
+
+def login(username=""):
+    """
+    Args:
+        username: If the username is left blank, the function will ask for a username using a box widget
+    """
+    global arrayed_analysis_default_username #variable /has/ to be declared global if you want to use the %store magic
+    arrayed_analysis_default_username = ""
+    if username:
+        arrayed_analysis_default_username=username
+    else:
+        %store -r arrayed_analysis_default_username
+        arrayed_analysis_default_username = raw_input("NERSC username? leave blank for default (\"" + arrayed_analysis_default_username + "\") ") or arrayed_analysis_default_username
+
+        %store arrayed_analysis_default_username
+
+    password = getpass.getpass(prompt="Enter password for user \"" + arrayed_analysis_default_username + "\"")
+
+    print "Attempting to log in..."
+    sys.stdout.flush()
+    newOpenMSIsession=OpenMSIsession(arrayed_analysis_default_username)
+    authURL = 'https://openmsi.nersc.gov/openmsi/client/login'
+    # Retrieve the CSRF token first
+    r= newOpenMSIsession.requests_session.get(authURL)  # sets
+    r.raise_for_status()
+    csrftoken = newOpenMSIsession.requests_session.cookies['csrftoken']
+    login_data = dict(username=arrayed_analysis_default_username, password=password, csrfmiddlewaretoken=csrftoken)
+    result = newOpenMSIsession.requests_session.post(authURL, data=login_data, headers=dict(Referer=authURL)).url[-5:]
+    IPython.display.clear_output()
+    if(result=="login"):
+        print "Password for user \"" + arrayed_analysis_default_username + "\" was likely wrong, re-run this cell to try again"
+    elif(result=="index"):
+        print "Login appears to be successful!"
+    else:
+        print "Not sure if login was successful, try continuing and see what happens"
+    sys.stdout.flush()
+    return newOpenMSIsession
+
+
+
+def getMZ(client,filename,expIndex,dataIndex):
+    payload = {'file':filename,
+          'expIndex':expIndex,'dataIndex':dataIndex,'qspectrum_viewerOption':'0',
+          'qslice_viewerOption':'0',
+          'col':0,'row':0,
+          'findPeak':'0','format':'JSON'}
+    url = 'https://openmsi.nersc.gov/openmsi/qmz'
+    r = client.get(url,params=payload)
+    r.raise_for_status()
+    data = json.loads(r.content)
+    return np.asarray(data[u'values_spectra'])
+
+def oneSpotMask(xEdges,yEdges,x,y,integrationRadius):
+    return np.argwhere(((x - xEdges)**2 + (y - yEdges)**2)**0.5 < integrationRadius)
+
+def sumPixels(pixelMask,imageStack):
+    values = []
+    for j, coord in enumerate(pixelMask): #how many pixels per spot
+        values.append(imageStack[coord[0],coord[1],:])
+    return sum(values)
+    #sum (values) returns a vector with one entry per ion,
+
+def doesThisOverlap_pixelwise(spotMaskCache,spotMask,ignoreThisSpotNumber,numberOfSpots,verbose=False):
+    for pixel in spotMask:
+        for i in range(numberOfSpots):
+            if (i != ignoreThisSpotNumber) and (spotMaskCache[i] is not None) and np.any(np.all(spotMaskCache[i]==pixel,1)):
+                if (verbose):
+                    print "yikes! spot #",ignoreThisSpotNumber,",",pixel,"is in spot #",i
+                return True
+    return False
+
+def doesThisOverlap_distancewise(newX,newY,xCenter,yCenter,ignoreThisSpotNumber,distance_squared,verbose=False):
+    for i in range(len(xCenter)):
+        if (i != ignoreThisSpotNumber) and ((newX-xCenter[i])**2+(newY-yCenter[i])**2<=distance_squared):
+            if (verbose):
+                print "yikes! spot #",ignoreThisSpotNumber,"at",newX,",",newY,"is",((newX-xCenter[i])**2+(newY-yCenter[i]))**0.5,"from",i
+            return True
+    return False
+
+class SpotOptimizationException(Exception):
+    def __init__(self):
+        Exception.__init__(self,("The optimization algorithm was unable to optimize a spot." +
+                    "This could be because there is no signal, because the ion weighting"+
+                    "is all zeroes, the overlapDistance is too large in Distance mode, or"+
+                    ", in Pixel Overlap mode, spots are overlapping so severely at the"+
+                    "beginning of this routine that it could not find a new location no"+
+                    "more than halfboxsize away that does /not/ overlap with another spot."))
+
+
+
+class DraggablePoint:
+    lock = None #only one can be animated at a time
+    def __init__(self, point):
+        self.point = point
+        self.press = None
+        self.background = None
+
+    def connect(self):
+        'connect to all the events we need'
+        self.cidpress = self.point.figure.canvas.mpl_connect('button_press_event', self.on_press)
+        self.cidrelease = self.point.figure.canvas.mpl_connect('button_release_event', self.on_release)
+        self.cidmotion = self.point.figure.canvas.mpl_connect('motion_notify_event', self.on_motion)
+
+    def on_press(self,event):
+        if event.inaxes != self.point.axes:
+            return
+        contains = self.point.contains(event)[0]
+        if not contains: return
+        self.press = self.point.center, event.xdata, event.ydata
+
+
+    def on_release(self, event):
+        'on release we reset the press data'
+        self.press = None
+        lock = None
+        if DraggablePoint.lock is not self:
+            return
+        # turn off the rect animation property and reset the background
+        self.point.set_animated(False)
+        self.background = None
+        # redraw the full figure
+        self.point.figure.canvas.draw()
+
+    def on_motion(self, event):
+        if self.press is None: return
+        if event.inaxes != self.point.axes: return
+        self.point.center, xpress, ypress = self.press
+        dx = event.xdata - xpress
+        dy = event.ydata - ypress
+        self.point.center = (self.point.center[0]+dx, self.point.center[1]+dy)
+        self.point.set_facecolor('r')
+        self.point.figure.canvas.draw()
+
+    def disconnect(self):
+        'disconnect all the stored connection ids'
+        self.point.figure.canvas.mpl_disconnect(self.cidpress)
+        self.point.figure.canvas.mpl_disconnect(self.cidrelease)
+        self.point.figure.canvas.mpl_disconnect(self.cidmotion)
+
+
+class DraggablePointForBarycentricInterpolation:
+    # make an interactive plot, move the 4 vertices of the trapezoid around
+    # as they are moved, redraw the interior points of our grid
+
+    #based heavily on this example:
+    # http://stackoverflow.com/questions/21654008/matplotlib-drag-overlapping-points-interactively
+    lock = None #only one can be animated at a time
+    def __init__(self, point,h1,ax, Nx, Ny):
+        self.point = point
+        self.press = None
+        self.background = None
+        self.h1 = h1
+        self.ax = ax
+        self.Nx = Nx
+        self.Ny = Ny
+
+    def connect(self):
+        'connect to all the events we need'
+        self.cidpress = self.point.figure.canvas.mpl_connect('button_press_event', self.on_press)
+        self.cidrelease = self.point.figure.canvas.mpl_connect('button_release_event', self.on_release)
+        self.cidmotion = self.point.figure.canvas.mpl_connect('motion_notify_event', self.on_motion)
+
+    def on_press(self,event):
+        if event.inaxes != self.point.axes:
+            return
+        contains = self.point.contains(event)[0]
+        if not contains: return
+        self.press = self.point.center, event.xdata, event.ydata
+
+    def on_release(self, event):
+        'on release we reset the press data'
+        self.press = None
+        lock = None
+        if DraggablePointForBarycentricInterpolation.lock is not self:
+            return
+        # turn off the rect animation property and reset the background
+        self.point.set_animated(False)
+        self.background = None
+        # redraw the full figure
+        self.point.figure.canvas.draw()
+
+    def on_motion(self, event):
+        if self.press is None: return
+        if event.inaxes != self.point.axes: return
+        self.point.center, xpress, ypress = self.press
+        dx = event.xdata - xpress
+        dy = event.ydata - ypress
+        self.point.center = (self.point.center[0]+dx, self.point.center[1]+dy)
+#         print self.ax.patches[0]
+        p = []
+        for d in self.ax.patches:
+            p.append(d.center)
+        p = np.asarray(p)
+
+        xi,yi = barycentric_trapezoidial_interpolation(self.Nx,self.Ny,p)
+
+        self.h1.set_xdata(xi)
+        self.h1.set_ydata(yi)
+
+        self.point.figure.canvas.draw()
+
+    def disconnect(self):
+        'disconnect all the stored connection ids'
+        self.point.figure.canvas.mpl_disconnect(self.cidpress)
+        self.point.figure.canvas.mpl_disconnect(self.cidrelease)
+        self.point.figure.canvas.mpl_disconnect(self.cidmotion)
+
+
+def barycentric_trapezoidial_interpolation(Nx,Ny,p):
+	# define our function to calculate the position of points from Nx columns and Ny rows.
+	# The vertices are defined by p which is a size(4,2) array.
+	# each row of p are the coordinates or the vertices of our trapezoid
+	# the vertices have to be given in a specific order:
+	# [[1 1]
+	#  [1 2]
+	#  [2 1]
+	#  [2 2]]
+	# an example plot using the barycentric interpolation to regrid data
+# define number of rows and number of columns and the vertices, then make some plots
+
+	# Example:
+	# Nx = 20
+	# Ny = 15
+
+	# coords = [[0,0],[0,1],[1,0],[1,1]] #these are the [x,y] coords of your 4 draggable corners
+	# coords = np.asarray(coords)
+
+	# f, ax = plt.subplots(2, 2) # sharey=True, sharex=True)
+	# for i,a in enumerate(ax.flatten()):
+	#     newCoords = coords[:]
+	#     if i > 0:
+	#         newCoords = newCoords + np.random.rand(4,2) / 5
+	#     xi,yi = openmsi.barycentric_trapezoidial_interpolation(Nx,Ny,newCoords)
+	#     a.plot(xi,yi,'.',markersize=12)
+	# plt.show()
+
+    x_basis = np.linspace(0,1,Nx)
+    y_basis = np.linspace(0,1,Ny)
+    px = [[p[0,0], p[2,0]],[p[1,0], p[3,0]]] #these are the [2,2] x-coordinates
+    py = [[p[0,1], p[2,1]],[p[1,1], p[3,1]]] #these are the [2,2] x-coordinates
+    fx = interpolate.interp2d([1,0], [1,0], px, kind='linear')
+    xi = fx(x_basis[:],y_basis[:]).flatten()
+    fy = interpolate.interp2d([1,0], [1,0], py, kind='linear')
+    yi = fy(x_basis[:],y_basis[:]).flatten()
+    return xi,yi
+
+print "OpenMSI Arrayed Analysis Toolkit has been loaded"

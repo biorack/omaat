@@ -4,8 +4,54 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import getpass
 import json, requests
+import IPython.display
 
-def authenticateUser(client,username):
+class OpenMSIsession:
+
+    def __init__(self):
+        self.requests_session = requests.Session()
+
+    def getFilelist(client):
+        payload = {'format':'JSON','mtype':'filelistView'}
+        url = 'https://openmsi.nersc.gov/openmsi/qmetadata'
+        r = self.requests_session.get(url,params=payload)
+        fileList = json.loads(r.content)
+        return fileList.keys()
+
+
+def authenticateUser(client,username=""):
+    if username:
+        spots_analysis_tool_username=username
+    else:
+        client = requests.Session()
+        spots_analysis_tool_username = ""
+        %store -r spots_analysis_tool_username
+
+        spots_analysis_tool_username = raw_input("NERSC username? leave blank for default (\""+spots_analysis_tool_username+"\") ") or spots_analysis_tool_username
+
+        %store spots_analysis_tool_username
+
+    password = getpass.getpass(prompt="Enter password for user \""+spots_analysis_tool_username+"\"")
+
+    print "Attempting to log in..."
+
+    authURL = 'https://openmsi.nersc.gov/openmsi/client/login'
+    # Retrieve the CSRF token first
+    client.get(authURL)  # sets cookie
+    csrftoken = client.cookies['csrftoken']
+    login_data = dict(username=spots_analysis_tool_username, password=password, csrfmiddlewaretoken=csrftoken)
+    result = client.post(authURL, data=login_data, headers=dict(Referer=authURL)).url[-5:]
+    IPython.display.clear_output()
+    if(result=="login"):
+        print "Password for user \""+spots_analysis_tool_username+"\" was likely wrong, re-run this cell to try again"
+        x=5
+    elif(result=="index"):
+        print "Login appears to be successful!"
+    else:
+        print "Not sure if login was successful, try continuing and see what happens"
+
+
+
     password = getpass.getpass()
     authURL = 'https://openmsi.nersc.gov/openmsi/client/login/'
     # Retrieve the CSRF token first
@@ -14,13 +60,8 @@ def authenticateUser(client,username):
     login_data = dict(username=username, password=password, csrfmiddlewaretoken=csrftoken, next='/')
     r = client.post(authURL, data=login_data, headers=dict(Referer=authURL))
     return client
-    
-def getFilelist(client):
-    payload = {'format':'JSON','mtype':'filelistView'}
-    url = 'https://openmsi.nersc.gov/openmsi/qmetadata'
-    r = client.get(url,params=payload)
-    fileList = json.loads(r.content)
-    return fileList.keys()
+
+
 
 def getMZ(client,filename,expIndex,dataIndex):
     payload = {'file':filename,
