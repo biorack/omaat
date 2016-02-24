@@ -296,9 +296,10 @@ class OpenMSIsession(object):
         #IPython.display.display(fileSelector)
         def _fileSelector_updated():
             global arrayed_analysis_default_filename
-            self.filename=fileSelector.value
-            arrayed_analysis_default_filename = self.filename
-            %store arrayed_analysis_default_filename
+            if(self.filename!=fileSelector.value):
+                self.filename=fileSelector.value
+                arrayed_analysis_default_filename = self.filename
+                %store arrayed_analysis_default_filename
         fileSelector.on_trait_change(_fileSelector_updated)
         _fileSelector_updated()
         return ipywidgets.Box(children=(title,fileSelector))
