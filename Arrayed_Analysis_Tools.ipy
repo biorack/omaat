@@ -5,10 +5,14 @@ import matplotlib.patches as patches
 import getpass
 import json, requests
 import IPython.display
-import ipywidgets
 import ast
 import abc
 import sys
+
+try:
+    import ipywidgets
+except ImportError:
+    import IPython.html.widgets as ipywidgets
 
 
 
@@ -281,13 +285,13 @@ class OpenMSIsession(object):
         myFiles.sort()
         arrayed_analysis_default_filename = myFiles[0]
         %store -r arrayed_analysis_default_filename
-        fileSelector=ipywidgets.widgets.Select(options=myFiles, width=800, height=400)
+        fileSelector=ipywidgets.Select(options=myFiles, width=800, height=400)
         try:
             fileSelector.value=arrayed_analysis_default_filename
         except KeyError:
             fileSelector.value=myFiles[0]
 
-        title=ipywidgets.widgets.HTML(value="Pick the file you want to load here") #IPN2: HTMLWidget
+        title=ipywidgets.HTML(value="Pick the file you want to load here") #IPN2: HTMLWidget
         #IPython.display.display(title)
         #IPython.display.display(fileSelector)
         def _fileSelector_updated():
