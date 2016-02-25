@@ -54,7 +54,15 @@ class AreaNearPeak(MassRangeReductionStrategy):
         return result
 
 class ArrayedImage(object):
+    """
+    On abject that represents an OpenMSI image with arrayed samples on it.
+    This class has various useful methods to help you extract data out.
+    """
     def __init__(self,originalSize,ions,filename,expIndex,dataIndex,mz):
+        """
+        you won't want to call the constructor, use the 'g' function
+        to create an OpenMSIsession object
+        """
         self.imStack = np.zeros((originalSize[0],originalSize[1],len(ions)))
         self.originalSize=originalSize
         self.ions=ions
@@ -65,9 +73,38 @@ class ArrayedImage(object):
         self.baseImage=None
         self.xCenters=None
         self.yCenters=None
+        self.spotList=None
 
+
+    def __str__(self):
+        spotstr=""
+        if self.xCenters:
+            spotstr="{:d}".format(len(self.xCenters))
+        else:
+            spotstr="None"
+
+        spotListstr=""
+        if self.spotList:
+            spotListstr="{:d}".format(len(self.spotList))
+        else:
+            spotListstr="None"
+
+        return "ArrayedImage based on "+self.filename+\
+                "\nIons loaded: "+str(self.ions)+\
+                "\n# of spot locations defined: "+spotstr+\
+                "\n# of spot pixel masks defined: "+spotListstr
 
     def roughPosition(self,Nx,Ny,dragRadius=4,pointMarkerSize=12,colormap='gray'):
+        """
+        Use a GUI to define a trapezoidal grid of spot centers
+        If there are spot centers stored in this object already, this method will overwrite them!
+        :param Nx: number of columns
+        :param Ny: number of rows
+        :param dragRadius: the size of the draggable circle shown in the GUI
+        :param pointMarkerSize: the size of the grid points in the GUI
+        :param colormap: the color map used for the base image. default is 'gray'
+        :return: no return value
+        """
         bkImage=self.baseImage
         fig = plt.figure()
         fig.set_facecolor('white')
@@ -115,6 +152,12 @@ class ArrayedImage(object):
 
 
     def fineTunePosition(self,markerRadius=2,colormap='gray'):
+        """
+        Use a GUI to check the positions of the spots and manually adjust them if need be
+        :param markerRadius: the radius of the draggable markers in the GUI. Default is 2.
+        :param colormap: colormap of the base image. Default is 'gray'
+        :return: no return value.
+        """
         fig = plt.figure()
         fig.set_facecolor('white')
         ax = fig.add_subplot(111)
@@ -163,12 +206,53 @@ class ArrayedImage(object):
                       halfboxsize=2,
                       optimizationrounds=3,
                       integrationRadius=2,
+                      ionWeighting=None,
                       avoidOverlaps=True,
                       pixelwiseOverlapAvoidance=False,
                       overlapDistance_squared=None,
                       verbose=False,
                       raiseExceptions=False,
                       minimumScore=0):
+        """
+        Performs a local optimization to align the spot centers to maxima spots on the image
+
+        the parameters affect the way the local optimization is run, but the defaults should be
+        a good start.
+
+        :param halfboxsize: How many pixels to the left, right, up and down should be compared
+                            every round of the optimization (i.e. "how local" is the optimization).
+                            If spots are farther apart from each other you can set this higher.
+                            Also note it will increase the time it takes to run the algorithm.
+                            Default is 2.
+        :param optimizationrounds: How many cycles of optimization should be performed. Default is 3.
+        :param integrationRadius: The radius of the spots used in calculations.
+        :param ionWeighting: How much should each ion be weighted when calculating scores for each
+                             spot location? this needs to be an array of floats the same length as
+                             there are ions in the image. by default all ions are equally weighted
+                             (i.e. if there's 3 ions, the default ends up being [1,1,1]
+        :param avoidOverlaps: Should the optimizer try to avoid spots from overlapping with each other?
+                              Default is True.
+        :param pixelwiseOverlapAvoidance:  There are two methods of determining if two spots are overlapping:
+                                           Distance-wise and pixel-wise. The former checks the distance between
+                                           spots using the pythagorean theorem, while the latter checks if any of
+                                           the pixels in a spot's integration map are shared by another spot.
+                                           pixel-wise overlap checking is much slower, so only use it if
+                                           distance-wise is not satisfactory. Default is False.
+        :param overlapDistance_squared: Only used if pixelwiseOverlapAvoidance is False.
+                                        By default the overlapDistance is integrationRadius+1
+        :param verbose: Prints the progress and any irregularities that occur during the optimization. Default is False
+        :param raiseExceptions: Raise exceptions if either:
+                                1) spots are so close to the image's edge that the algorithm tries to place spots there
+                                2) It's impossible to find a location for a spot that satisfies the minimumScore and
+                                overlap avoidance requirements.
+                                Default is False.
+                                Even if this is set to False, an exception will /still/ be raised if the best score for
+                                a spot is zero, because this probably means that there's not a single location that
+                                the optimizer could choose that didn't overlap with other spots.
+        :param minimumScore: Require that at least a score this high is obtainable before moving a spot to a new
+                             location. If there are spots missing in the grid, you may want to set this. Default is 0.
+        :return: no return value
+        """
         if not overlapDistance_squared:
             overlapDistance_squared=(integrationRadius+1)**2
 
@@ -183,8 +267,9 @@ class ArrayedImage(object):
 
         numberOfSpots=len(xCenter)
         spotMaskCache=np.empty(numberOfSpots, dtype=np.ndarray)
-        ionWeighting=np.empty(len(self.ions))
-        ionWeighting.fill(1.)
+        if not ionWeighting:
+            ionWeighting=np.empty(len(self.ions))
+            ionWeighting.fill(1.)
         for round in range(optimizationrounds):
             totalscore=0
             minscore=-1
@@ -250,9 +335,81 @@ class ArrayedImage(object):
         sys.stdout.flush()
 
 
+    def generateSpotList(self,integrationRadius=2):
+
+        xEdges, yEdges = np.meshgrid(range(self.imStack.shape[1]), range(self.imStack.shape[0]), sparse=False, indexing='xy')
+
+        myPixels = []
+        tallies={}
+        for x,y in zip(self.xCenters,self.yCenters):
+            idx = oneSpotMask(xEdges,yEdges,x,y,integrationRadius)
+            myPixels.append(idx)
+            if len(idx) not in tallies:
+                tallies[len(idx)]=0
+            tallies[len(idx)]+=1
+        self.spotList=myPixels
+        print "{:d} spots generated. number of spots with N pixels:{}".format(len(myPixels),tallies)
+        return myPixels
+
+    def generateMaskedImage(self,spotList=None):
+        if not spotList:
+            if not self.spotList:
+                raise ValueError("Need to either pass a spot list in the method argument,"+
+                                 "or have generated a spotList using generateSpotList at some point")
+            spotList=self.spotList
+
+        mask = np.zeros(self.baseImage.shape)
+
+        for spot in spotList:
+            for i in spot:
+                mask[i[0],i[1]] = 1
+        print "A masked image has been generated. View it using matplotlib's imshow()"
+        return mask
+
+
+    def writeResultTable(self,fileHandler,spotList=None,minIntensity=0):
+
+        if not spotList:
+            if not self.spotList:
+                raise ValueError("Need to either pass a spot list in the method argument,"+
+                                 "or have generated a spotList using generateSpotList at some point")
+            spotList=self.spotList
+
+        fileHandler.write('index\tfile\trow\tcolumn\trow-centroid\tcol-centroid\t')
+        for i in self.ions:
+            fileHandler.write('%5.4f Sum\t' % i)
+            fileHandler.write('%5.4f Max\t' % i)
+            fileHandler.write('%5.4f Mean\t' % i)
+            fileHandler.write('%5.4f Median\t' % i)
+            fileHandler.write('%5.4f NumPixels\t' % i)
+        fileHandler.write('\n')
+
+        for i,myPixel in enumerate(spotList): #how many spots
+            fileHandler.write('%d\t%s\t%s\t%s\t%d\t%d\t' % ( i, self.filename, 'coming_soon', 'coming_soon', np.mean(myPixel[:,0]), np.mean(myPixel[:,1]) ) )
+            for i,ion in enumerate(self.ions): #how many ions
+                values = []
+                for j, coord in enumerate(myPixel): #how many pixels per spot
+                    if self.imStack[coord[0],coord[1],i] > minIntensity:
+                        #print self.imStack[coord[0],coord[1],i]
+                        #print coord[0],coord[1],i
+                        #accumulate a list of peak height or
+                        #peak area values for each pixel
+                        #assigned to each spot
+                        values.append(self.imStack[coord[0],coord[1],i])
+                if len(values) > 0:
+                    fileHandler.write('%d\t%d\t%d\t%d\t%d\t' % (np.sum(values),np.max(values),np.mean(values),np.median(values),len(values)))
+                else:
+                    fileHandler.write('%d\t%d\t%d\t%d\t%d\t' % (0,0,0,0,len(values)))
+
+            fileHandler.write('\n')
+
+
 
 
 class OpenMSIsession(object):
+    """
+    This object represents an OpenMSI session.
+    """
 
 
     def __init__(self,username):
@@ -307,9 +464,27 @@ class OpenMSIsession(object):
 
     def getArrayedImage(self,ions,massRange,filename=None,massRangeReductionStrategy=PeakArea(),expIndex=0,dataIndex=0,verbose=True):
         """
-        :param filename: if this is not set, it'll use the filename selected in the file selector.
-                        if no filename is selected there, a ValueError exception will be raised
-        :return:
+        Downloads defined ion slices from an OpenMSI image and returns a new ArrayedImage file
+        :param ions: Ihe ion slices you want to download. A list of floats
+        :param massRange: Fetch ion data this much +/- the ions defined.
+        :param filename: If this is not set, it'll use the filename selected in the file selector.
+                if no filename is selected there, a ValueError exception will be raised
+        :param massRangeReductionStrategy: The downloaded mass range needs to be reduced into
+                                           a single number for each ion. People disagree on how
+                                           to do this, so we allow a variety of strategies
+                                           defined by classes that extend MassRangeReductionStrategy.
+                                           The MassReductionStrategies available right now are
+                                           - PeakArea: takes the sum of the entire mass range
+                                           - PeakHeight: takes the maximum of the entire mass range
+                                           - AreaNearPeak: finds the maximum of the mass range, and sums
+                                                           a defined number of bins to the left and to
+                                                           the right of it.
+                                           You will need to instantiate one of these classes and pass it
+                                           as an argument here. Default is a new PeakArea instance
+        :param expIndex: Which OpenMSI experiment index to download
+        :param dataIndex: Which OpenMSI data index to download
+        :param verbose: If true, prints progress on which ion it's currently loading
+        :return: a new ArrayedImage file that contains the reduced data.
         """
         if filename:
             self.filename=filename
@@ -599,5 +774,7 @@ def barycentric_trapezoidial_interpolation(Nx,Ny,p):
     fy = interpolate.interp2d([1,0], [1,0], py, kind='linear')
     yi = fy(x_basis[:],y_basis[:]).flatten()
     return xi,yi
+
+
 
 print "OpenMSI Arrayed Analysis Toolkit has been loaded"
