@@ -1,3 +1,4 @@
+
 import numpy as np
 from scipy import interpolate
 import matplotlib.pyplot as plt
@@ -8,6 +9,8 @@ import IPython.display
 import ast
 import abc
 import sys
+
+
 
 try:
     import ipywidgets
@@ -149,6 +152,9 @@ class ArrayedImage(object):
         self.yCenters=h1.get_ydata()
 
         print "new spot x and y locations have been saved."
+
+
+
 
 
     def fineTunePosition(self,markerRadius=2,colormap='gray'):
@@ -506,7 +512,7 @@ class OpenMSIsession(object):
 
         for i,ion in enumerate(newImage.ions):
             if(verbose):
-                print "loading ion {:d} of {:d}. m/z = {:f}".format(i,len(newImage.ions),ion)
+                print "loading ion {:d} of {:d}. m/z = {:f}".format(i+1,len(newImage.ions),ion)
                 sys.stdout.flush()
             idx = np.where(abs(newImage.mz-ion)<massRange) #get the m/z indices within myRange
             if(len(idx[0])<=0):
@@ -525,15 +531,65 @@ class OpenMSIsession(object):
         sys.stdout.flush()
         return newImage
 
+    def interactiveImageLoader(self):
 
+        expIndex=ipywidgets.BoundedIntText(value=0)
+        expIndexBox=ipywidgets.HBox(children=(ipywidgets.HTML("Set the Experiment Index you want to load:"),expIndex))
+        dataIndex=ipywidgets.BoundedIntText(value=0)
+        dataIndexBox=ipywidgets.HBox(children=(ipywidgets.HTML("Set the Data Index you want to load:"),dataIndex))
+        global openmsi_default_ions
+        openmsi_default_ions = []
+        %store -r openmsi_default_ions
+        ionSet=set(openmsi_default_ions)
+        ionList=ipywidgets.Select(options=[str(x) for x in sorted(ionSet)])
+        addIonBox=ipywidgets.BoundedFloatText(description="Add an ion:",max=10000)
+        addIonButton=ipywidgets.Button(description="Add Ion",tooltip="Add the ion in the above box to the list of ions")
+        removeIonButton=ipywidgets.Button(description="Remove Ion",tooltip="Remove the selected ion to the list of ions")
+        ionSelectionEditBox=ipywidgets.VBox(children=(addIonBox,addIonButton,removeIonButton))
+        ionSelectionBox=ipywidgets.HBox(children=(ipywidgets.HTML("Select which ions you want to load:"),ionList,ionSelectionEditBox))
 
+        def addion(widget):
+            ionSet.update({addIonBox.value})
+            ionList.options=[]
+            ionList.options=[str(x) for x in sorted(ionSet)]
+            global openmsi_default_ions
+            openmsi_default_ions = list(ionSet)
+            %store openmsi_default_ions
 
+        def removeion(widget):
+            ionSet.difference_update({float(ionList.value)})
+            ionList.options=[]
+            ionList.options=[str(x) for x in sorted(ionSet)]
+            global openmsi_default_ions
+            openmsi_default_ions = list(ionSet)
+            %store openmsi_default_ions
 
+        addIonButton.on_click(addion)
+        removeIonButton.on_click(removeion)
+
+        rangeCheckBox=ipywidgets.RadioButtons(options=["absolute m/z values","% of m/z"])
+        rangeNumber=ipywidgets.BoundedFloatText(description="+/- range",value=0.5)
+        rangeBox=ipywidgets.HBox(children=(ipywidgets.HTML("Determine m/z +/- range to consider:"),rangeCheckBox,rangeNumber))
+        OKbutton=ipywidgets.Button(description="Load Image!")
+
+        linebreak=ipywidgets.HTML("<br>")
+        fileSelector=self.fileSelector()
+
+        IPython.display.display(ipywidgets.VBox(children=(fileSelector,linebreak,expIndexBox,dataIndexBox,linebreak,ionSelectionBox,linebreak,rangeBox,linebreak,OKbutton)))
+
+        def do_load(widget):
+            global img
+            print "Loading image..."
+            img=self.getArrayedImage(openmsi_default_ions,massRange=rangeNumber.value,expIndex=expIndex.value,dataIndex=dataIndex.value,verbose=True)
+
+        OKbutton.on_click(do_load)
+
+        return "done"
 
 def login(username=""):
     """
     Args:
-        username: If the username is left blank, the function will ask for a username using a box widget
+        username: If the username is left blank, the function will ask for a username
     """
     global arrayed_analysis_default_username #variable /has/ to be declared global if you want to use the %store magic
     arrayed_analysis_default_username = ""
@@ -777,4 +833,4 @@ def barycentric_trapezoidial_interpolation(Nx,Ny,p):
 
 
 
-print "OpenMSI Arrayed Analysis Toolkit has been loaded"
+print "Completed loading OpenMSI Arrayed Analysis Toolkit"
