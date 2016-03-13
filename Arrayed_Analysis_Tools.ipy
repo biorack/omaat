@@ -81,7 +81,7 @@ class ArrayedImage(object):
 
     def __str__(self):
         spotstr=""
-        if self.xCenters:
+        if self.xCenters is not None:
             spotstr="{:d}".format(len(self.xCenters))
         else:
             spotstr="None"
@@ -164,6 +164,8 @@ class ArrayedImage(object):
         :param colormap: colormap of the base image. Default is 'gray'
         :return: no return value.
         """
+        if self.xCenters is None:
+            raise ValueError("There are no defined spots")
         fig = plt.figure()
         fig.set_facecolor('white')
         ax = fig.add_subplot(111)
@@ -206,6 +208,19 @@ class ArrayedImage(object):
         self.yCenters=yFine
         print "new spot x and y locations have been saved."
 
+    def roughPosition_with_dialogs(self):
+
+        global arrayed_analysis_columns #variable /has/ to be declared global if you want to use the %store magic
+        global arrayed_analysis_rows
+        arrayed_analysis_columns = 12
+        arrayed_analysis_rows = 8
+        %store -r arrayed_analysis_columns
+        %store -r arrayed_analysis_rows
+        arrayed_analysis_columns = int(raw_input("Number of columns? leave blank for default (\"{:d}\") ".format(arrayed_analysis_columns)) or arrayed_analysis_columns)
+        arrayed_analysis_rows = int(raw_input("Number of rows? leave blank for default (\"{:d}\") ".format(arrayed_analysis_rows)) or arrayed_analysis_rows)
+        %store arrayed_analysis_columns
+        %store arrayed_analysis_rows
+        self.roughPosition(arrayed_analysis_columns,arrayed_analysis_rows,colormap='jet_r')
 
 
     def optimizeSpots(self,
@@ -217,6 +232,7 @@ class ArrayedImage(object):
                       pixelwiseOverlapAvoidance=False,
                       overlapDistance_squared=None,
                       verbose=False,
+                      progressbar=None,
                       raiseExceptions=False,
                       minimumScore=0):
         """
@@ -259,6 +275,9 @@ class ArrayedImage(object):
                              location. If there are spots missing in the grid, you may want to set this. Default is 0.
         :return: no return value
         """
+        if self.xCenters is None:
+            raise ValueError("You can't run the optimizer because there are no defined spots")
+
         if not overlapDistance_squared:
             overlapDistance_squared=(integrationRadius+1)**2
 
@@ -319,14 +338,16 @@ class ArrayedImage(object):
                             raise SpotOptimizationException()
                         elif(verbose):
                             print "Score of spot #",i,"is",int(best),", but need >",minimumScore,". Location stays as it was before."
+                    cyclenumber = numberOfSpots*round+i
+                    if(progressbar):
+                        progressbar.value=100*cyclenumber/(numberOfSpots*optimizationrounds)
                     if(verbose): #to get the stats for this round
                         totalscore+=best
                         if(minscore==-1):
                             minscore=best
                         minscore=min(minscore,best)
                         maxscore=max(maxscore,best)
-                        cyclenumber = numberOfSpots*round+i
-                        if(cyclenumber%100==99):
+                        if(cyclenumber%100==99 and not progressbar):
                             print "{:d}% done with the optimization process".format(int(100*cyclenumber/(numberOfSpots*optimizationrounds)))
                             sys.stdout.flush()
             print "done with optimization round",round+1,"of",optimizationrounds
@@ -341,8 +362,93 @@ class ArrayedImage(object):
         sys.stdout.flush()
 
 
+    def optimizeSpots_with_dialogs(self):
+        if self.xCenters is None:
+            print "You can't run the optimizer before you have defined a grid of spots!"
+            return
+        global arrayed_analysis_radius #variable /has/ to be declared global if you want to use the %store magic
+        global arrayed_analysis_minScore
+        arrayed_analysis_radius = 2
+        arrayed_analysis_minScore = 0
+        %store -r arrayed_analysis_radius
+        %store -r arrayed_analysis_minScore
+        linebreak=ipywidgets.HTML("<br>")
+        displayBox=ipywidgets.VBox()
+        integrationRadiusBox=ipywidgets.BoundedFloatText(value=arrayed_analysis_radius)
+        displayBox.children+=(ipywidgets.HBox(children=(ipywidgets.HTML("Integration radius. (recommended: use the radius of your spots)"),integrationRadiusBox)),)
+        roundsBox=ipywidgets.BoundedIntText(value=3)
+        displayBox.children+=(ipywidgets.HBox(children=(ipywidgets.HTML("How many rounds of optimization should be performed?&nbsp&nbsp"),roundsBox)),)
+        halfboxsizeBox=ipywidgets.BoundedIntText(value=2)
+        displayBox.children+=(ipywidgets.HBox(children=(ipywidgets.HTML("How far away from the current location should the algorithm search every round? It searches this many pixels, up, down, left and right.&nbsp"),halfboxsizeBox)),)
+
+        overlapBox=ipywidgets.Checkbox(value=True)
+        displayBox.children+=(ipywidgets.HBox(children=(ipywidgets.HTML("Prevent neighboring spots from overlapping?"),overlapBox)),)
+        ionWeightBoxes=[]
+        for i in self.ions:
+            newbox=ipywidgets.BoundedFloatText(value=1,max=1)
+            ionWeightBoxes.append(newbox)
+            displayBox.children+=(ipywidgets.HBox(children=(ipywidgets.HTML("Weighting for ion '{:f}'".format(i)),newbox)),)
+
+
+        calcButton=ipywidgets.Button(description="Calculate scores for current spot locations")
+        calcResults=ipywidgets.HTML()
+        displayBox.children+=(linebreak,calcButton,calcResults,linebreak)
+
+        minScoreBox=ipywidgets.BoundedFloatText(value=arrayed_analysis_minScore,max=1000000)
+        displayBox.children+=(ipywidgets.HBox(children=(ipywidgets.HTML("Minimum score necessary to move spot."),minScoreBox,)),
+                             ipywidgets.HTML("(if every location on your grid is occupied by a spot, you safely can leave the minimum score at 0. Setting a minimum score will prevent spot locations from converging on artifacts if there is no real spot there)<br>"))
+
+
+        optimizeButton=ipywidgets.Button(description="Optimize Spots!")
+
+        progressbar=ipywidgets.FloatProgress()
+        progressbar.visible=False
+        displayBox.children+=(optimizeButton,progressbar)
+        IPython.display.display(displayBox)
+
+        def do_calculate(widget):
+            results=[]
+            ionweights=[]
+            imWidth=self.imStack.shape[1]
+            imHeight=self.imStack.shape[0]
+            numberOfSpots=len(self.xCenters)
+            for box in ionWeightBoxes:
+                ionweights.append(box.value)
+            xEdges, yEdges = np.meshgrid(range(imWidth), range(imHeight), sparse=False, indexing='xy')
+            for i in range(numberOfSpots):
+                currentSpot=oneSpotMask(xEdges,yEdges,self.xCenters[i],self.yCenters[i],integrationRadiusBox.value)
+                result=sum(sumPixels(currentSpot,self.imStack)*ionweights)/len(currentSpot)
+                results.append(result)
+            calcResults.value="{:d} Spots calculated.<br>Low spot score: {:f}<br>High spot score: {:f}<br>Mean spot score: {:f}<br>Median spot score: {:f}".format(
+                len(results),min(results),max(results),np.mean(results),np.median(results))
+
+        def do_optimize(widget):
+            global arrayed_analysis_radius
+            global arrayed_analysis_minScore
+            arrayed_analysis_radius=integrationRadiusBox.value
+            arrayed_analysis_minScore=minScoreBox.value
+            %store arrayed_analysis_radius
+            %store arrayed_analysis_minScore
+            ionweights=[]
+            for box in ionWeightBoxes:
+                ionweights.append(box.value)
+            progressbar.visible=True
+            self.optimizeSpots(halfboxsizeBox.value,
+                               roundsBox.value,
+                               arrayed_analysis_radius,
+                               ionWeighting=ionweights,
+                               avoidOverlaps=overlapBox.value,
+                               progressbar=progressbar,
+                               minimumScore=arrayed_analysis_minScore)
+
+        calcButton.on_click(do_calculate)
+        optimizeButton.on_click(do_optimize)
+
+
     def generateSpotList(self,integrationRadius=2):
 
+        if self.xCenters is None:
+            raise ValueError("There are no defined spots")
         xEdges, yEdges = np.meshgrid(range(self.imStack.shape[1]), range(self.imStack.shape[0]), sparse=False, indexing='xy')
 
         myPixels = []
@@ -457,22 +563,23 @@ class OpenMSIsession(object):
         title=ipywidgets.HTML(value="Pick the file you want to load here") #IPN2: HTMLWidget
         #IPython.display.display(title)
         #IPython.display.display(fileSelector)
-        def _fileSelector_updated():
+        def _fileSelector_updated(widget=None):
             global arrayed_analysis_default_filename
             if(self.filename!=fileSelector.value):
                 self.filename=fileSelector.value
                 arrayed_analysis_default_filename = self.filename
                 %store arrayed_analysis_default_filename
-        fileSelector.on_trait_change(_fileSelector_updated)
+        fileSelector.observe(_fileSelector_updated)
         _fileSelector_updated()
         return ipywidgets.Box(children=(title,fileSelector))
 
 
-    def getArrayedImage(self,ions,massRange,filename=None,massRangeReductionStrategy=PeakArea(),expIndex=0,dataIndex=0,verbose=True):
+    def getArrayedImage(self,ions,massRange,massRangePercent=False,filename=None,massRangeReductionStrategy=PeakArea(),expIndex=0,dataIndex=0,verbose=True):
         """
         Downloads defined ion slices from an OpenMSI image and returns a new ArrayedImage file
-        :param ions: Ihe ion slices you want to download. A list of floats
+        :param ions: Ihe ion (m/z) slices you want to download. A list of floats
         :param massRange: Fetch ion data this much +/- the ions defined.
+        :param massRangePercent: Should the number in massRange be interpreted as a percent of the ion?.
         :param filename: If this is not set, it'll use the filename selected in the file selector.
                 if no filename is selected there, a ValueError exception will be raised
         :param massRangeReductionStrategy: The downloaded mass range needs to be reduced into
@@ -511,10 +618,11 @@ class OpenMSIsession(object):
         #To populate it, first we'll download the raw data and then reduce it into one slice for every ion
 
         for i,ion in enumerate(newImage.ions):
+            realMassRange = massRange if not massRangePercent else massRange*ion*0.01
             if(verbose):
-                print "loading ion {:d} of {:d}. m/z = {:f}".format(i+1,len(newImage.ions),ion)
+                print "loading ion {:d} of {:d}. m/z = {:f} +/- {:f}".format(i+1,len(newImage.ions),ion,realMassRange)
                 sys.stdout.flush()
-            idx = np.where(abs(newImage.mz-ion)<massRange) #get the m/z indices within myRange
+            idx = np.where(abs(newImage.mz-ion)<realMassRange) #get the m/z indices within the range
             if(len(idx[0])<=0):
                 raise ValueError("Ion {:f} not present in the file {}".format(ion,newImage.filename))
             payload = {'file':newImage.filename,
@@ -531,7 +639,7 @@ class OpenMSIsession(object):
         sys.stdout.flush()
         return newImage
 
-    def interactiveImageLoader(self):
+    def imageLoader_with_dialogs(self):
 
         expIndex=ipywidgets.BoundedIntText(value=0)
         expIndexBox=ipywidgets.HBox(children=(ipywidgets.HTML("Set the Experiment Index you want to load:"),expIndex))
@@ -546,7 +654,7 @@ class OpenMSIsession(object):
         addIonButton=ipywidgets.Button(description="Add Ion",tooltip="Add the ion in the above box to the list of ions")
         removeIonButton=ipywidgets.Button(description="Remove Ion",tooltip="Remove the selected ion to the list of ions")
         ionSelectionEditBox=ipywidgets.VBox(children=(addIonBox,addIonButton,removeIonButton))
-        ionSelectionBox=ipywidgets.HBox(children=(ipywidgets.HTML("Select which ions you want to load:"),ionList,ionSelectionEditBox))
+        ionSelectionBox=ipywidgets.HBox(children=(ipywidgets.HTML("Select which ions you want to load:&nbsp"),ionList,ionSelectionEditBox))
 
         def addion(widget):
             ionSet.update({addIonBox.value})
@@ -569,22 +677,42 @@ class OpenMSIsession(object):
 
         rangeCheckBox=ipywidgets.RadioButtons(options=["absolute m/z values","% of m/z"])
         rangeNumber=ipywidgets.BoundedFloatText(description="+/- range",value=0.5)
-        rangeBox=ipywidgets.HBox(children=(ipywidgets.HTML("Determine m/z +/- range to consider:"),rangeCheckBox,rangeNumber))
+        rangeBox=ipywidgets.HBox(children=(ipywidgets.HTML("Determine m/z +/- range to consider:&nbsp"),rangeCheckBox,rangeNumber))
+        reductionCheckBox=ipywidgets.RadioButtons(options=["Sum of all data points in mass range (i.e., area under the curve)","Max data point in range (i.e. peak height)","n data points around the max"])
+        Ndatapoints=ipywidgets.BoundedIntText(description="number of data points",value=2)
+        Ndatapoints.visible=False
+        def obs(widget):
+            Ndatapoints.visible=(reductionCheckBox.value=="n data points around the max")
+        reductionCheckBox.observe(obs)
+
+        reductionBox=ipywidgets.HBox(children=(ipywidgets.HTML("Mass range reduction strategy:&nbsp"),reductionCheckBox,Ndatapoints))
+
+        reductionBox.padding
+
         OKbutton=ipywidgets.Button(description="Load Image!")
 
         linebreak=ipywidgets.HTML("<br>")
         fileSelector=self.fileSelector()
 
-        IPython.display.display(ipywidgets.VBox(children=(fileSelector,linebreak,expIndexBox,dataIndexBox,linebreak,ionSelectionBox,linebreak,rangeBox,linebreak,OKbutton)))
+        IPython.display.display(ipywidgets.VBox(children=(fileSelector,linebreak,expIndexBox,dataIndexBox,linebreak,ionSelectionBox,linebreak,rangeBox,linebreak,reductionBox,linebreak,OKbutton)))
 
         def do_load(widget):
             global img
             print "Loading image..."
-            img=self.getArrayedImage(openmsi_default_ions,massRange=rangeNumber.value,expIndex=expIndex.value,dataIndex=dataIndex.value,verbose=True)
+            reductionStrategy = None
+            if reductionCheckBox == "Sum of all data points in mass range (i.e., area under the curve)":
+                reductionStrategy=PeakArea()
+            elif "Max data point in range (i.e. peak height)":
+                reductionStrategy=PeakHeight()
+            elif "n data points around the max":
+                reductionStrategy=AreaNearPeak(halfpeakwidth=Ndatapoints.value)
+            else:
+                raise AssertionError("this error should not be happening...")
+            img=self.getArrayedImage(openmsi_default_ions,massRange=rangeNumber.value,massRangePercent=(rangeCheckBox.value=="% of m/z"),expIndex=expIndex.value,dataIndex=dataIndex.value,massRangeReductionStrategy=reductionStrategy,verbose=True)
+            print "Image has been saved in the global 'img' variable."
 
         OKbutton.on_click(do_load)
 
-        return "done"
 
 def login(username=""):
     """
