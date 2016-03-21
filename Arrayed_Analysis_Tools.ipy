@@ -63,7 +63,7 @@ class ArrayedImage(object):
     """
     def __init__(self,originalSize,ions,filename,expIndex,dataIndex,mz):
         """
-        you won't want to call the constructor, use the 'g' function
+        you won't want to call the constructor, use the 'login' function
         to create an OpenMSIsession object
         """
         self.imStack = np.zeros((originalSize[0],originalSize[1],len(ions)))
@@ -146,10 +146,15 @@ class ArrayedImage(object):
             dr.connect()
             drs.append(dr)
 
+
+        putWindowOnTop()
+
         plt.show()
 
         self.xCenters=h1.get_xdata()
         self.yCenters=h1.get_ydata()
+
+
 
         print "new spot x and y locations have been saved."
 
@@ -196,13 +201,14 @@ class ArrayedImage(object):
             dr.connect()
             drs.append(dr)
 
+        putWindowOnTop()
+
         plt.show()
         xFine = []
         yFine = []
         for c in circles:
             xFine.append(c.center[0])
             yFine.append(c.center[1])
-
 
         self.xCenters=xFine
         self.yCenters=yFine
@@ -221,6 +227,7 @@ class ArrayedImage(object):
         %store arrayed_analysis_columns
         %store arrayed_analysis_rows
         self.roughPosition(arrayed_analysis_columns,arrayed_analysis_rows,colormap='jet_r')
+
 
 
     def optimizeSpots(self,
@@ -524,7 +531,7 @@ class OpenMSIsession(object):
     """
 
 
-    def __init__(self,username):
+    def __init__(self,username=""):
         """you won't want to call the constructor, use the 'login' function
         to create an OpenMSIsession object"""
         self.requests_session = requests.Session()
@@ -569,7 +576,10 @@ class OpenMSIsession(object):
                 self.filename=fileSelector.value
                 arrayed_analysis_default_filename = self.filename
                 %store arrayed_analysis_default_filename
-        fileSelector.observe(_fileSelector_updated)
+        try:
+            fileSelector.observe(_fileSelector_updated)
+        except AttributeError:
+            fileSelector.on_trait_change(_fileSelector_updated)
         _fileSelector_updated()
         return ipywidgets.Box(children=(title,fileSelector))
 
@@ -683,7 +693,10 @@ class OpenMSIsession(object):
         Ndatapoints.visible=False
         def obs(widget):
             Ndatapoints.visible=(reductionCheckBox.value=="n data points around the max")
-        reductionCheckBox.observe(obs)
+        try:
+            reductionCheckBox.observe(obs)
+        except AttributeError:
+            reductionCheckBox.on_trait_change(obs)
 
         reductionBox=ipywidgets.HBox(children=(ipywidgets.HTML("Mass range reduction strategy:&nbsp"),reductionCheckBox,Ndatapoints))
 
@@ -751,6 +764,22 @@ def login(username=""):
     sys.stdout.flush()
     return newOpenMSIsession
 
+def putWindowOnTop():
+        #this puts the matplotlib window in front
+    itDidntWork=False
+    plt.draw()
+    try:
+        plt.get_current_fig_manager().window.raise_()
+    except:
+        itDidntWork=True
+    if itDidntWork:
+        try:
+            plt.get_current_fig_manager().window.attributes('-topmost',1)
+        except:
+            itDidntWork=True
+
+    if itDidntWork:
+        print "The window should be open now. If you can't see it, check to see if it's behind another window"
 
 
 def getMZ(client,filename,expIndex,dataIndex):
