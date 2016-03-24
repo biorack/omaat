@@ -9,6 +9,7 @@ import IPython.display
 import ast
 import abc
 import sys
+import pandas as pd
 
 
 
@@ -486,7 +487,7 @@ class ArrayedImage(object):
         return mask
 
 
-    def writeResultTable(self,fileHandler,spotList=None,minIntensity=0):
+    def writeResultTable(self,fileHandler,spotList=None,minPixelIntensity=0):
 
         if not spotList:
             if not self.spotList:
@@ -508,7 +509,7 @@ class ArrayedImage(object):
             for i,ion in enumerate(self.ions): #how many ions
                 values = []
                 for j, coord in enumerate(myPixel): #how many pixels per spot
-                    if self.imStack[coord[0],coord[1],i] > minIntensity:
+                    if self.imStack[coord[0],coord[1],i] > minPixelIntensity:
                         #print self.imStack[coord[0],coord[1],i]
                         #print coord[0],coord[1],i
                         #accumulate a list of peak height or
@@ -523,6 +524,50 @@ class ArrayedImage(object):
             fileHandler.write('\n')
 
 
+    def resultsDataFrame(self,spotList=None,minPixelIntensity=0,multiIndex=True):
+
+        if not spotList:
+            if not self.spotList:
+                raise ValueError("Need to either pass a spot list in the method argument,"+
+                                 "or have generated a spotList using generateSpotList at some point")
+            spotList=self.spotList
+
+
+        df= None
+
+        if multiIndex:
+            df=pd.DataFrame(index=range(len(spotList)),
+                dtype='float64',columns=pd.MultiIndex.from_product([self.ions,
+                    ['sum','mean','median','min','max','num_pixels']],names=['ion','descriptor'],sortorder=0))#TURN INDEX INTO (ROW,COLUMN) EVENTUALLY!!!
+        else:
+
+            colnames=['row','column','horizontal_coordinate','vertical_coordinate']
+            colnames+=[(i,x) for i in self.ions for x in ['sum','mean','median','min','max','num_pixels']]
+
+            df=pd.DataFrame(index=range(len(spotList)),columns=colnames)
+
+        for s,spot in enumerate(spotList): #how many spots
+            if not multiIndex:
+                df.set_value(s,'horizontal_coordinate',np.mean(spot[:,0]))
+                df.set_value(s,'vertical_coordinate',np.mean(spot[:,1]))
+            for i,ion in enumerate(self.ions): #how many ions
+                values = []
+                for coord in spot: #how many pixels per spot
+                    if self.imStack[coord[0],coord[1],i] > minPixelIntensity:
+                        values.append(self.imStack[coord[0],coord[1],i])
+                if len(values) > 0:
+                    df.set_value(s,(ion,'sum'),np.sum(values))
+                    df.set_value(s,(ion,'max'),np.max(values))
+                    df.set_value(s,(ion,'min'),np.min(values))
+                    df.set_value(s,(ion,'median'),np.median(values))
+                    df.set_value(s,(ion,'mean'),np.mean(values))
+                    df.set_value(s,(ion,'num_pixels'),len(values))
+
+                else:
+                    df.set_value(s,(ion,'sum'),0)
+                    df.set_value(s,(ion,'num_pixels'),0)
+
+        return df
 
 
 class OpenMSIsession(object):
@@ -699,8 +744,6 @@ class OpenMSIsession(object):
             reductionCheckBox.on_trait_change(obs)
 
         reductionBox=ipywidgets.HBox(children=(ipywidgets.HTML("Mass range reduction strategy:&nbsp"),reductionCheckBox,Ndatapoints))
-
-        reductionBox.padding
 
         OKbutton=ipywidgets.Button(description="Load Image!")
 
