@@ -78,6 +78,9 @@ class ArrayedImage(object):
         self.xCenters=None
         self.yCenters=None
         self.spotList=None
+        self.spotLocations=None
+        self.Nrows=None
+        self.Ncolumns=None
 
 
     def __str__(self):
@@ -102,6 +105,7 @@ class ArrayedImage(object):
         """
         Use a GUI to define a trapezoidal grid of spot centers
         If there are spot centers stored in this object already, this method will overwrite them!
+        It also stores the (row,column) positions of the spots as a last of 1-indexed tuples
         :param Nx: number of columns
         :param Ny: number of rows
         :param dragRadius: the size of the draggable circle shown in the GUI
@@ -118,13 +122,22 @@ class ArrayedImage(object):
     #     ax.set_xlim(2,7)
     #     ax.set_ylim(0,3)
         ax.set_aspect('equal')
-        xPos = [0,bkImage.shape[1]]
-        xPos = [0,bkImage.shape[0]]
+    #    xPos = [0,bkImage.shape[1]]
+    #    xPos = [0,bkImage.shape[0]]
+
         circles = []
-        circles.append(patches.Circle((0,0), dragRadius, fc='r', alpha=0.5, ))
-        circles.append(patches.Circle((0,bkImage.shape[0]), dragRadius, fc='r', alpha=0.5, ))
-        circles.append(patches.Circle((bkImage.shape[1],0), dragRadius, fc='r', alpha=0.5, ))
-        circles.append(patches.Circle((bkImage.shape[1],bkImage.shape[0]), dragRadius, fc='r', alpha=0.5, ))
+        circles.append(patches.Circle((0,0), dragRadius, fc='black', alpha=0.5, ))
+        circles.append(patches.Circle((0,bkImage.shape[0]), dragRadius, fc='b', alpha=0.5, ))
+        circles.append(patches.Circle((bkImage.shape[1],0), dragRadius, fc='b', alpha=0.5, ))
+        circles.append(patches.Circle((bkImage.shape[1],bkImage.shape[0]), dragRadius, fc='b', alpha=0.5, ))
+
+
+        rowAlpha=chr(ord('A')+Ny-1)
+        annontations = [plt.annotate("A1",(0,0),color="white",horizontalalignment='center', verticalalignment='center'),
+                        plt.annotate("".join([rowAlpha,"1"]),(0,bkImage.shape[0]),color="white",horizontalalignment='center', verticalalignment='center'),
+                        plt.annotate("".join(["A",str(Nx)]),(bkImage.shape[1],0),color="white",horizontalalignment='center', verticalalignment='center'),
+                        plt.annotate("".join([rowAlpha,str(Nx)]),(bkImage.shape[1],bkImage.shape[0]),color="white",horizontalalignment='center', verticalalignment='center')]
+
 
     #     for i in range(2):
     #         for j in range(2):
@@ -141,9 +154,9 @@ class ArrayedImage(object):
         h1, = ax.plot(xi,yi,'.',markersize=pointMarkerSize)
 
         drs = []
-        for circ in circles:
+        for c,circ in enumerate(circles):
             ax.add_patch(circ)
-            dr = DraggablePointForBarycentricInterpolation(circ,h1,ax, Nx, Ny)
+            dr = DraggablePointForBarycentricInterpolation(circ,h1,ax, Nx, Ny,annontations[c])
             dr.connect()
             drs.append(dr)
 
@@ -154,8 +167,9 @@ class ArrayedImage(object):
 
         self.xCenters=h1.get_xdata()
         self.yCenters=h1.get_ydata()
-
-
+        self.spotLocations=[(row+1,column+1) for row in range(Ny) for column in range(Nx)]
+        self.Ncolumns=Nx
+        self.Nrows=Ny
 
         print "new spot x and y locations have been saved."
 
@@ -194,11 +208,15 @@ class ArrayedImage(object):
         circles = []
         L = len(xRough)
         for i in range(L):
-            circles.append(patches.Circle((xRough[i],yRough[i]), markerRadius, fc='b', alpha=0.5, ))
+            circ=patches.Circle((xRough[i],yRough[i]), markerRadius, fc='b', alpha=0.5, )
+            circles.append(circ)
 
-        for circ in circles:
+            txt=alphaRowString(self.spotLocations[i])
+            a=plt.annotate(txt,(self.xCenters[i],self.yCenters[i]),color="white",horizontalalignment='center', verticalalignment='center')
+            a.set_animated(False)
+
             ax.add_patch(circ)
-            dr = DraggablePoint(circ)
+            dr = DraggablePoint(circ,a)
             dr.connect()
             drs.append(dr)
 
@@ -472,6 +490,11 @@ class ArrayedImage(object):
         return myPixels
 
     def generateMaskedImage(self,spotList=None):
+        """
+
+        :param spotList:
+        :return: An image that can be viewed using matplotlib's imshow()
+        """
         if not spotList:
             if not self.spotList:
                 raise ValueError("Need to either pass a spot list in the method argument,"+
@@ -483,11 +506,35 @@ class ArrayedImage(object):
         for spot in spotList:
             for i in spot:
                 mask[i[0],i[1]] = 1
-        print "A masked image has been generated. View it using matplotlib's imshow()"
         return mask
 
 
-    def writeResultTable(self,fileHandler,spotList=None,minPixelIntensity=0):
+    def showMaskedImage(self,spotList=None,alphaRows=True):
+        """
+
+        :param alphaRows: If this is set to True, the image will use A,B,C... for the rows. if it's set to False, it'll plot a numeric tuple
+        """
+
+        if spotList is None:
+            global arrayed_analysis_radius
+            %store -r arrayed_analysis_radius
+            spots=img.generateSpotList(integrationRadius=arrayed_analysis_radius)
+
+
+        maskedimg=self.generateMaskedImage(spotList=spotList)
+
+        plt.imshow(maskedimg)
+        ap={"linewidth":0, "facecolor":"g", "width":2,"frac":0}
+        xshift = min(4,(max(self.xCenters)-min(self.xCenters))/self.Ncolumns/4.0)
+        yshift = min(4,(max(self.yCenters)-min(self.yCenters))/self.Nrows/4.0)
+        for i in range(len(self.xCenters)):
+            txt=alphaRowString(self.spotLocations[i]) if alphaRows else str(self.spotLocations[i])
+            plt.annotate(txt,(self.xCenters[i],self.yCenters[i]),xytext=(self.xCenters[i]-xshift,self.yCenters[i]-yshift),color="g",horizontalalignment='right', verticalalignment='bottom',arrowprops=ap)
+        putWindowOnTop()
+        plt.show()
+
+
+    def writeResultTable(self,fileHandler,spotList=None,minPixelIntensity=0,alphaRows=False):
 
         if not spotList:
             if not self.spotList:
@@ -505,7 +552,10 @@ class ArrayedImage(object):
         fileHandler.write('\n')
 
         for i,myPixel in enumerate(spotList): #how many spots
-            fileHandler.write('%d\t%s\t%s\t%s\t%d\t%d\t' % ( i, self.filename, 'coming_soon', 'coming_soon', np.mean(myPixel[:,0]), np.mean(myPixel[:,1]) ) )
+
+            fileHandler.write('%d\t%s\t%s\t%s\t%d\t%d\t' % ( i, self.filename,
+                                                             chr(ord('A')+self.spotLocations[i][0]-1) if alphaRows else str(self.spotLocations[i][0]),
+                                                             self.spotLocations[i][1], np.mean(myPixel[:,0]), np.mean(myPixel[:,1]) ) )
             for i,ion in enumerate(self.ions): #how many ions
                 values = []
                 for j, coord in enumerate(myPixel): #how many pixels per spot
@@ -524,7 +574,7 @@ class ArrayedImage(object):
             fileHandler.write('\n')
 
 
-    def resultsDataFrame(self,spotList=None,minPixelIntensity=0,multiIndex=True):
+    def resultsDataFrame(self,spotList=None,minPixelIntensity=0,multiIndex=True,alphaRows=False):
 
         if not spotList:
             if not self.spotList:
@@ -535,8 +585,13 @@ class ArrayedImage(object):
 
         df= None
 
+        rowIndexes=self.spotLocations
+        if alphaRows:
+            rowIndexes=[alphaRowString(sl) for sl in self.spotLocations]
+
+
         if multiIndex:
-            df=pd.DataFrame(index=range(len(spotList)),
+            df=pd.DataFrame(index=rowIndexes,
                 dtype='float64',columns=pd.MultiIndex.from_product([self.ions,
                     ['sum','mean','median','min','max','num_pixels']],names=['ion','descriptor'],sortorder=0))#TURN INDEX INTO (ROW,COLUMN) EVENTUALLY!!!
         else:
@@ -544,28 +599,28 @@ class ArrayedImage(object):
             colnames=['row','column','horizontal_coordinate','vertical_coordinate']
             colnames+=[(i,x) for i in self.ions for x in ['sum','mean','median','min','max','num_pixels']]
 
-            df=pd.DataFrame(index=range(len(spotList)),columns=colnames)
+            df=pd.DataFrame(index=rowIndexes,columns=colnames)
 
         for s,spot in enumerate(spotList): #how many spots
             if not multiIndex:
-                df.set_value(s,'horizontal_coordinate',np.mean(spot[:,0]))
-                df.set_value(s,'vertical_coordinate',np.mean(spot[:,1]))
+                df.set_value(rowIndexes[s],'horizontal_coordinate',np.mean(spot[:,0]))
+                df.set_value(rowIndexes[s],'vertical_coordinate',np.mean(spot[:,1]))
             for i,ion in enumerate(self.ions): #how many ions
                 values = []
                 for coord in spot: #how many pixels per spot
                     if self.imStack[coord[0],coord[1],i] > minPixelIntensity:
                         values.append(self.imStack[coord[0],coord[1],i])
                 if len(values) > 0:
-                    df.set_value(s,(ion,'sum'),np.sum(values))
-                    df.set_value(s,(ion,'max'),np.max(values))
-                    df.set_value(s,(ion,'min'),np.min(values))
-                    df.set_value(s,(ion,'median'),np.median(values))
-                    df.set_value(s,(ion,'mean'),np.mean(values))
-                    df.set_value(s,(ion,'num_pixels'),len(values))
+                    df.set_value(rowIndexes[s],(ion,'sum'),np.sum(values))
+                    df.set_value(rowIndexes[s],(ion,'max'),np.max(values))
+                    df.set_value(rowIndexes[s],(ion,'min'),np.min(values))
+                    df.set_value(rowIndexes[s],(ion,'median'),np.median(values))
+                    df.set_value(rowIndexes[s],(ion,'mean'),np.mean(values))
+                    df.set_value(rowIndexes[s],(ion,'num_pixels'),len(values))
 
                 else:
-                    df.set_value(s,(ion,'sum'),0)
-                    df.set_value(s,(ion,'num_pixels'),0)
+                    df.set_value(rowIndexes[s],(ion,'sum'),0)
+                    df.set_value(rowIndexes[s],(ion,'num_pixels'),0)
 
         return df
 
@@ -877,10 +932,11 @@ class SpotOptimizationException(Exception):
 
 class DraggablePoint:
     lock = None #only one can be animated at a time
-    def __init__(self, point):
+    def __init__(self, point,annotation):
         self.point = point
         self.press = None
         self.background = None
+        self.annotation=annotation
 
     def connect(self):
         'connect to all the events we need'
@@ -904,6 +960,7 @@ class DraggablePoint:
             return
         # turn off the rect animation property and reset the background
         self.point.set_animated(False)
+        self.annotation.set_animated(False)
         self.background = None
         # redraw the full figure
         self.point.figure.canvas.draw()
@@ -915,6 +972,7 @@ class DraggablePoint:
         dx = event.xdata - xpress
         dy = event.ydata - ypress
         self.point.center = (self.point.center[0]+dx, self.point.center[1]+dy)
+        self.annotation.set_position(self.point.center)
         self.point.set_facecolor('r')
         self.point.figure.canvas.draw()
 
@@ -932,7 +990,7 @@ class DraggablePointForBarycentricInterpolation:
     #based heavily on this example:
     # http://stackoverflow.com/questions/21654008/matplotlib-drag-overlapping-points-interactively
     lock = None #only one can be animated at a time
-    def __init__(self, point,h1,ax, Nx, Ny):
+    def __init__(self, point,h1,ax, Nx, Ny,annotation):
         self.point = point
         self.press = None
         self.background = None
@@ -940,6 +998,7 @@ class DraggablePointForBarycentricInterpolation:
         self.ax = ax
         self.Nx = Nx
         self.Ny = Ny
+        self.annotation=annotation
 
     def connect(self):
         'connect to all the events we need'
@@ -962,6 +1021,7 @@ class DraggablePointForBarycentricInterpolation:
             return
         # turn off the rect animation property and reset the background
         self.point.set_animated(False)
+        self.annotation.set_animated(False)
         self.background = None
         # redraw the full figure
         self.point.figure.canvas.draw()
@@ -973,6 +1033,7 @@ class DraggablePointForBarycentricInterpolation:
         dx = event.xdata - xpress
         dy = event.ydata - ypress
         self.point.center = (self.point.center[0]+dx, self.point.center[1]+dy)
+        self.annotation.set_position(self.point.center)
 #         print self.ax.patches[0]
         p = []
         for d in self.ax.patches:
@@ -1020,16 +1081,21 @@ def barycentric_trapezoidial_interpolation(Nx,Ny,p):
 	#     xi,yi = openmsi.barycentric_trapezoidial_interpolation(Nx,Ny,newCoords)
 	#     a.plot(xi,yi,'.',markersize=12)
 	# plt.show()
-
     x_basis = np.linspace(0,1,Nx)
     y_basis = np.linspace(0,1,Ny)
     px = [[p[0,0], p[2,0]],[p[1,0], p[3,0]]] #these are the [2,2] x-coordinates
     py = [[p[0,1], p[2,1]],[p[1,1], p[3,1]]] #these are the [2,2] x-coordinates
-    fx = interpolate.interp2d([1,0], [1,0], px, kind='linear')
+    #fx = interpolate.interp2d([1,0], [1,0], px, kind='linear')
+    fx = interpolate.interp2d([0,1], [0,1], px, kind='linear')
     xi = fx(x_basis[:],y_basis[:]).flatten()
-    fy = interpolate.interp2d([1,0], [1,0], py, kind='linear')
+    #fy = interpolate.interp2d([1,0], [1,0], py, kind='linear')
+    fy = interpolate.interp2d([0,1], [0,1], py, kind='linear')
     yi = fy(x_basis[:],y_basis[:]).flatten()
+
     return xi,yi
+
+def alphaRowString(tuple):
+    return "{}{:02d}".format(chr(ord('A')+tuple[0]-1),tuple[1])
 
 
 
