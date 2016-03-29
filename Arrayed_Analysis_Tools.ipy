@@ -10,6 +10,7 @@ import ast
 import abc
 import sys
 import pandas as pd
+import datetime
 
 
 
@@ -17,7 +18,6 @@ try:
     import ipywidgets
 except ImportError:
     import IPython.html.widgets as ipywidgets
-
 
 
 class MassRangeReductionStrategy:
@@ -534,7 +534,16 @@ class ArrayedImage(object):
         plt.show()
 
 
-    def writeResultTable(self,fileHandler,spotList=None,minPixelIntensity=0,alphaRows=False):
+    def writeResultTable(self,fileName="",spotList=None,minPixelIntensity=0,alphaRows=False):
+
+        if fileName:
+            actualFileName=fileName
+        else:
+            dt = datetime.datetime.now()
+            actualFileName="openmsi_arrayed_analysis_results_{:d}-{:d}-{:d}_{:d}h{:d}.tsv".format(dt.year,dt.month,dt.day,dt.hour,dt.minute)
+
+
+        fileHandler=open(actualFileName,'wb')
 
         if not spotList:
             if not self.spotList:
@@ -572,6 +581,15 @@ class ArrayedImage(object):
                     fileHandler.write('%d\t%d\t%d\t%d\t%d\t' % (0,0,0,0,len(values)))
 
             fileHandler.write('\n')
+        fileHandler.close()
+        IPython.display.display(IPython.display.FileLink(actualFileName,
+                                 result_html_prefix="Click the link below to access the results file:<br>",
+                                 result_html_suffix="""<br>Open it in Microsoft Excel or your favorite data analysis program.<br>
+                                                You should now be done using this tool, but if you decide you want to
+                                                further optimize your spot placement, make sure to re-run the
+                                                notebook cells to update your results.
+                                                <br><br>Thank you for using the OpenMSI Arrayed Analysis tool!"""))
+
 
 
     def resultsDataFrame(self,spotList=None,minPixelIntensity=0,multiIndex=True,alphaRows=False):
@@ -1100,3 +1118,5 @@ def alphaRowString(tuple):
 
 
 print "Completed loading OpenMSI Arrayed Analysis Toolkit"
+
+"⋈"
