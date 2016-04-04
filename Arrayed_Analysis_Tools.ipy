@@ -593,6 +593,23 @@ class ArrayedImage(object):
 
 
     def resultsDataFrame(self,spotList=None,minPixelIntensity=0,multiIndex=True,alphaRows=False):
+        """
+        Generates a Pandas dataframe that summarizes the arrayed data.
+        :param spotList: List of lists of pixels that defines the locations of the spots on the image
+                            The default is the last-calculated spotlist for this image.
+        :param minPixelIntensity:
+                            Minimum intensity that a pixel needs to be higher than, to be included in the
+                            calculations. Pixels at or below this theshold will not be included when calculating
+                            any of the metrics like sum, min, max, mean, or median pixel intensity. Default is 0.
+        :param multiIndex:
+                            If true, creates a dataframe with a multiindex for the columns. If false, the
+                            indexes for the columns will be 2-tuples (ion, metric).
+        :param alphaRows:
+                            If True, sets the indexes of the data frame to strings with an alphabetical row
+                            identifier. alphaRows=False sets the indexes to 2-tuples (row,column).
+        :return:            A Pandas dataframe with, for each ion, and each spot, the sum, min, max, mean, median
+                            and number of pixels more intense than the minPixelIntensity.
+        """
 
         if not spotList:
             if not self.spotList:
