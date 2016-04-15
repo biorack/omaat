@@ -177,11 +177,12 @@ class ArrayedImage(object):
 
 
 
-    def fineTunePosition(self,markerRadius=2,colormap='gray'):
+    def fineTunePosition(self,markerRadius=3,colormap='gray',spotLabelsAlwaysOn=False):
         """
         Use a GUI to check the positions of the spots and manually adjust them if need be
         :param markerRadius: the radius of the draggable markers in the GUI. Default is 2.
         :param colormap: colormap of the base image. Default is 'gray'
+        :param spotLabelsAlwaysOn: show Row/Column lables on the spots all the time?
         :return: no return value.
         """
         if self.xCenters is None:
@@ -206,17 +207,21 @@ class ArrayedImage(object):
 
         drs = []
         circles = []
+        annotations=[]
         L = len(xRough)
         for i in range(L):
             circ=patches.Circle((xRough[i],yRough[i]), markerRadius, fc='b', alpha=0.5, )
             circles.append(circ)
 
             txt=alphaRowString(self.spotLocations[i])
-            a=plt.annotate(txt,(self.xCenters[i],self.yCenters[i]),color="white",horizontalalignment='center', verticalalignment='center')
+            a=plt.annotate(txt,(self.xCenters[i],self.yCenters[i]),color="white",horizontalalignment='center', verticalalignment='center'   )
             a.set_animated(False)
+            if not spotLabelsAlwaysOn:
+                a.set_visible(False)
+                annotations.append(a)
 
             ax.add_patch(circ)
-            dr = DraggablePoint(circ,a)
+            dr = DraggablePoint(circ,a,annotations)
             dr.connect()
             drs.append(dr)
 
@@ -535,12 +540,18 @@ class ArrayedImage(object):
 
 
     def writeResultTable(self,fileName="",spotList=None,minPixelIntensity=0,alphaRows=False):
+        '''
+
+        :param fileName: filename to write to. will automatically be appended with a .csv extension.
+                            Default is will use current date and time
+        :return:
+        '''
 
         if fileName:
-            actualFileName=fileName
+            actualFileName="{}.csv".format(fileName)
         else:
             dt = datetime.datetime.now()
-            actualFileName="openmsi_arrayed_analysis_results_{:d}-{:d}-{:d}_{:d}h{:d}.tsv".format(dt.year,dt.month,dt.day,dt.hour,dt.minute)
+            actualFileName="openmsi_arrayed_analysis_results_{:d}-{:d}-{:d}_{:d}h{:d}.csv".format(dt.year,dt.month,dt.day,dt.hour,dt.minute)
 
 
         fileHandler=open(actualFileName,'wb')
@@ -551,18 +562,18 @@ class ArrayedImage(object):
                                  "or have generated a spotList using generateSpotList at some point")
             spotList=self.spotList
 
-        fileHandler.write('index\tfile\trow\tcolumn\trow-centroid\tcol-centroid\t')
+        fileHandler.write('index,file,row,column,row-centroid,col-centroid,')
         for i in self.ions:
-            fileHandler.write('%5.4f Sum\t' % i)
-            fileHandler.write('%5.4f Max\t' % i)
-            fileHandler.write('%5.4f Mean\t' % i)
-            fileHandler.write('%5.4f Median\t' % i)
-            fileHandler.write('%5.4f NumPixels\t' % i)
+            fileHandler.write('%5.4f Sum,' % i)
+            fileHandler.write('%5.4f Max,' % i)
+            fileHandler.write('%5.4f Mean,' % i)
+            fileHandler.write('%5.4f Median,' % i)
+            fileHandler.write('%5.4f NumPixels,' % i)
         fileHandler.write('\n')
 
         for i,myPixel in enumerate(spotList): #how many spots
 
-            fileHandler.write('%d\t%s\t%s\t%s\t%d\t%d\t' % ( i, self.filename,
+            fileHandler.write('%d,%s,%s,%s,%d,%d,' % ( i, self.filename,
                                                              chr(ord('A')+self.spotLocations[i][0]-1) if alphaRows else str(self.spotLocations[i][0]),
                                                              self.spotLocations[i][1], np.mean(myPixel[:,0]), np.mean(myPixel[:,1]) ) )
             for i,ion in enumerate(self.ions): #how many ions
@@ -576,9 +587,9 @@ class ArrayedImage(object):
                         #assigned to each spot
                         values.append(self.imStack[coord[0],coord[1],i])
                 if len(values) > 0:
-                    fileHandler.write('%d\t%d\t%d\t%d\t%d\t' % (np.sum(values),np.max(values),np.mean(values),np.median(values),len(values)))
+                    fileHandler.write('%d,%d,%d,%d,%d,' % (np.sum(values),np.max(values),np.mean(values),np.median(values),len(values)))
                 else:
-                    fileHandler.write('%d\t%d\t%d\t%d\t%d\t' % (0,0,0,0,len(values)))
+                    fileHandler.write('%d,%d,%d,%d,%d,' % (0,0,0,0,len(values)))
 
             fileHandler.write('\n')
         fileHandler.close()
@@ -967,11 +978,12 @@ class SpotOptimizationException(Exception):
 
 class DraggablePoint:
     lock = None #only one can be animated at a time
-    def __init__(self, point,annotation):
+    def __init__(self, point,annotation,all_annotations):
         self.point = point
         self.press = None
         self.background = None
         self.annotation=annotation
+        self.all_annoations=all_annotations
 
     def connect(self):
         'connect to all the events we need'
@@ -985,6 +997,9 @@ class DraggablePoint:
         contains = self.point.contains(event)[0]
         if not contains: return
         self.press = self.point.center, event.xdata, event.ydata
+        for a in self.all_annoations:
+            a.set_visible(False)
+        self.annotation.set_visible(True)
 
 
     def on_release(self, event):
@@ -1008,7 +1023,7 @@ class DraggablePoint:
         dy = event.ydata - ypress
         self.point.center = (self.point.center[0]+dx, self.point.center[1]+dy)
         self.annotation.set_position(self.point.center)
-        self.point.set_facecolor('r')
+        self.point.set_facecolor('c')
         self.point.figure.canvas.draw()
 
     def disconnect(self):
