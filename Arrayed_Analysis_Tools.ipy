@@ -101,7 +101,7 @@ class ArrayedImage(object):
                 "\n# of spot locations defined: "+spotstr+\
                 "\n# of spot pixel masks defined: "+spotListstr
 
-    def roughPosition(self,Nx,Ny,dragRadius=4,pointMarkerSize=12,colormap='gray'):
+    def roughPosition(self,Nx,Ny,dragRadius=4,pointMarkerSize=12,colormap='gray',hexagonal=False):
         """
         Use a GUI to define a trapezoidal grid of spot centers
         If there are spot centers stored in this object already, this method will overwrite them!
@@ -148,15 +148,15 @@ class ArrayedImage(object):
         for d in circles:
             p.append(d.center)
         p = np.asarray(p)
-
-        xi,yi = barycentric_trapezoidial_interpolation(Nx,Ny,p)
+        print len(p)
+        xi,yi = barycentric_trapezoidial_interpolation(Nx,Ny,p,hexagonal=hexagonal)
 
         h1, = ax.plot(xi,yi,'.',markersize=pointMarkerSize)
 
         drs = []
         for c,circ in enumerate(circles):
             ax.add_patch(circ)
-            dr = DraggablePointForBarycentricInterpolation(circ,h1,ax, Nx, Ny,annontations[c])
+            dr = DraggablePointForBarycentricInterpolation(circ,h1,ax, Nx, Ny,annontations[c],hexagonal)
             dr.connect()
             drs.append(dr)
 
@@ -1040,7 +1040,7 @@ class DraggablePointForBarycentricInterpolation:
     #based heavily on this example:
     # http://stackoverflow.com/questions/21654008/matplotlib-drag-overlapping-points-interactively
     lock = None #only one can be animated at a time
-    def __init__(self, point,h1,ax, Nx, Ny,annotation):
+    def __init__(self, point,h1,ax, Nx, Ny,annotation,hexagonal):
         self.point = point
         self.press = None
         self.background = None
@@ -1049,6 +1049,8 @@ class DraggablePointForBarycentricInterpolation:
         self.Nx = Nx
         self.Ny = Ny
         self.annotation=annotation
+        self.hexagonal = hexagonal
+
 
     def connect(self):
         'connect to all the events we need'
@@ -1090,7 +1092,7 @@ class DraggablePointForBarycentricInterpolation:
             p.append(d.center)
         p = np.asarray(p)
 
-        xi,yi = barycentric_trapezoidial_interpolation(self.Nx,self.Ny,p)
+        xi,yi = barycentric_trapezoidial_interpolation(self.Nx,self.Ny,p,hexagonal = self.hexagonal)
 
         self.h1.set_xdata(xi)
         self.h1.set_ydata(yi)
@@ -1104,35 +1106,37 @@ class DraggablePointForBarycentricInterpolation:
         self.point.figure.canvas.mpl_disconnect(self.cidmotion)
 
 
-def barycentric_trapezoidial_interpolation(Nx,Ny,p):
-	# define our function to calculate the position of points from Nx columns and Ny rows.
-	# The vertices are defined by p which is a size(4,2) array.
-	# each row of p are the coordinates or the vertices of our trapezoid
-	# the vertices have to be given in a specific order:
-	# [[1 1]
-	#  [1 2]
-	#  [2 1]
-	#  [2 2]]
-	# an example plot using the barycentric interpolation to regrid data
+def barycentric_trapezoidial_interpolation(Nx,Ny,p,hexagonal=False):
+    # define our function to calculate the position of points from Nx columns and Ny rows.
+    # The vertices are defined by p which is a size(4,2) array.
+    # each row of p are the coordinates or the vertices of our trapezoid
+    # the vertices have to be given in a specific order:
+    # [[1 1]
+    #  [1 2]
+    #  [2 1]
+    #  [2 2]]
+    # an example plot using the barycentric interpolation to regrid data
 # define number of rows and number of columns and the vertices, then make some plots
 
-	# Example:
-	# Nx = 20
-	# Ny = 15
+    # Example:
+    # Nx = 20
+    # Ny = 15
 
-	# coords = [[0,0],[0,1],[1,0],[1,1]] #these are the [x,y] coords of your 4 draggable corners
-	# coords = np.asarray(coords)
+    # coords = [[0,0],[0,1],[1,0],[1,1]] #these are the [x,y] coords of your 4 draggable corners
+    # coords = np.asarray(coords)
 
-	# f, ax = plt.subplots(2, 2) # sharey=True, sharex=True)
-	# for i,a in enumerate(ax.flatten()):
-	#     newCoords = coords[:]
-	#     if i > 0:
-	#         newCoords = newCoords + np.random.rand(4,2) / 5
-	#     xi,yi = openmsi.barycentric_trapezoidial_interpolation(Nx,Ny,newCoords)
-	#     a.plot(xi,yi,'.',markersize=12)
-	# plt.show()
+    # f, ax = plt.subplots(2, 2) # sharey=True, sharex=True)
+    # for i,a in enumerate(ax.flatten()):
+    #     newCoords = coords[:]
+    #     if i > 0:
+    #         newCoords = newCoords + np.random.rand(4,2) / 5
+    #     xi,yi = openmsi.barycentric_trapezoidial_interpolation(Nx,Ny,newCoords)
+    #     a.plot(xi,yi,'.',markersize=12)
+    # plt.show()
+        
     x_basis = np.linspace(0,1,Nx)
     y_basis = np.linspace(0,1,Ny)
+        
     px = [[p[0,0], p[2,0]],[p[1,0], p[3,0]]] #these are the [2,2] x-coordinates
     py = [[p[0,1], p[2,1]],[p[1,1], p[3,1]]] #these are the [2,2] x-coordinates
     #fx = interpolate.interp2d([1,0], [1,0], px, kind='linear')
@@ -1141,7 +1145,14 @@ def barycentric_trapezoidial_interpolation(Nx,Ny,p):
     #fy = interpolate.interp2d([1,0], [1,0], py, kind='linear')
     fy = interpolate.interp2d([0,1], [0,1], py, kind='linear')
     yi = fy(x_basis[:],y_basis[:]).flatten()
-
+    if hexagonal:
+        d1 = (p[2,0] - p[0,0]) / Nx / 2.0
+        d2 = (p[3,0] - p[1,0]) / Nx / 2.0
+        offset = (d1 + d2) / 2.0
+        #every other row will be shifted in diff(x)/2
+        for i in range(0,len(xi),Nx*2):
+            for j in range(Nx):
+                xi[i+j] += offset
     return xi,yi
 
 def alphaRowString(tuple):
