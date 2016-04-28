@@ -101,7 +101,7 @@ class ArrayedImage(object):
                 "\n# of spot locations defined: "+spotstr+\
                 "\n# of spot pixel masks defined: "+spotListstr
 
-    def roughPosition(self,Nx,Ny,dragRadius=4,pointMarkerSize=12,colormap='gray',hexagonal=False):
+    def roughPosition(self,Nx,Ny,dragRadius=4,pointMarkerSize=12,colormap='gray',hexagonalOffset=0):
         """
         Use a GUI to define a trapezoidal grid of spot centers
         If there are spot centers stored in this object already, this method will overwrite them!
@@ -149,14 +149,14 @@ class ArrayedImage(object):
             p.append(d.center)
         p = np.asarray(p)
         print len(p)
-        xi,yi = barycentric_trapezoidial_interpolation(Nx,Ny,p,hexagonal=hexagonal)
+        xi,yi = barycentric_trapezoidial_interpolation(Nx,Ny,p,hexagonalOffset=hexagonalOffset)
 
         h1, = ax.plot(xi,yi,'.',markersize=pointMarkerSize)
 
         drs = []
         for c,circ in enumerate(circles):
             ax.add_patch(circ)
-            dr = DraggablePointForBarycentricInterpolation(circ,h1,ax, Nx, Ny,annontations[c],hexagonal)
+            dr = DraggablePointForBarycentricInterpolation(circ,h1,ax, Nx, Ny,annontations[c],hexagonalOffset)
             dr.connect()
             drs.append(dr)
 
@@ -242,15 +242,20 @@ class ArrayedImage(object):
 
         global arrayed_analysis_columns #variable /has/ to be declared global if you want to use the %store magic
         global arrayed_analysis_rows
+        global arrayed_analysis_offset
         arrayed_analysis_columns = 12
         arrayed_analysis_rows = 8
+        arrayed_analysis_offset = 0
         %store -r arrayed_analysis_columns
         %store -r arrayed_analysis_rows
+        %store -r arrayed_analysis_offset
         arrayed_analysis_columns = int(raw_input("Number of columns? leave blank for default (\"{:d}\") ".format(arrayed_analysis_columns)) or arrayed_analysis_columns)
         arrayed_analysis_rows = int(raw_input("Number of rows? leave blank for default (\"{:d}\") ".format(arrayed_analysis_rows)) or arrayed_analysis_rows)
+        arrayed_analysis_offset = float(raw_input("Hexagonal Offset? This shifts every other line by this many spots. leave blank for default (\"{:f}\") ".format(arrayed_analysis_offset)) or arrayed_analysis_offset)
         %store arrayed_analysis_columns
         %store arrayed_analysis_rows
-        self.roughPosition(arrayed_analysis_columns,arrayed_analysis_rows,colormap='jet_r')
+        %store arrayed_analysis_offset
+        self.roughPosition(arrayed_analysis_columns,arrayed_analysis_rows,colormap='jet_r',hexagonalOffset=arrayed_analysis_offset)
 
 
 
@@ -341,7 +346,7 @@ class ArrayedImage(object):
                                     raise IndexError("a location outside of the image was tried for a spot")
                                 else:
                                     if(verbose):
-                                        print "a location outside of the image was tried for spot #",i,", but ignored"
+                                        print "a location outside of the image was tried for spot #",i,"(",alphaRowString(self.spotLocations[i]),"), but ignored"
                                     continue
                             currentSpot=oneSpotMask(xEdges,yEdges,newX,newY,integrationRadius)
                             assert (len(currentSpot)>0)
@@ -1040,7 +1045,7 @@ class DraggablePointForBarycentricInterpolation:
     #based heavily on this example:
     # http://stackoverflow.com/questions/21654008/matplotlib-drag-overlapping-points-interactively
     lock = None #only one can be animated at a time
-    def __init__(self, point,h1,ax, Nx, Ny,annotation,hexagonal):
+    def __init__(self, point,h1,ax, Nx, Ny,annotation,hexagonalOffset):
         self.point = point
         self.press = None
         self.background = None
@@ -1049,7 +1054,7 @@ class DraggablePointForBarycentricInterpolation:
         self.Nx = Nx
         self.Ny = Ny
         self.annotation=annotation
-        self.hexagonal = hexagonal
+        self.hexagonalOffset = hexagonalOffset
 
 
     def connect(self):
@@ -1092,7 +1097,7 @@ class DraggablePointForBarycentricInterpolation:
             p.append(d.center)
         p = np.asarray(p)
 
-        xi,yi = barycentric_trapezoidial_interpolation(self.Nx,self.Ny,p,hexagonal = self.hexagonal)
+        xi,yi = barycentric_trapezoidial_interpolation(self.Nx,self.Ny,p,hexagonalOffset = self.hexagonalOffset)
 
         self.h1.set_xdata(xi)
         self.h1.set_ydata(yi)
@@ -1106,7 +1111,7 @@ class DraggablePointForBarycentricInterpolation:
         self.point.figure.canvas.mpl_disconnect(self.cidmotion)
 
 
-def barycentric_trapezoidial_interpolation(Nx,Ny,p,hexagonal=False):
+def barycentric_trapezoidial_interpolation(Nx,Ny,p,hexagonalOffset=0.5):
     # define our function to calculate the position of points from Nx columns and Ny rows.
     # The vertices are defined by p which is a size(4,2) array.
     # each row of p are the coordinates or the vertices of our trapezoid
@@ -1145,14 +1150,13 @@ def barycentric_trapezoidial_interpolation(Nx,Ny,p,hexagonal=False):
     #fy = interpolate.interp2d([1,0], [1,0], py, kind='linear')
     fy = interpolate.interp2d([0,1], [0,1], py, kind='linear')
     yi = fy(x_basis[:],y_basis[:]).flatten()
-    if hexagonal:
-        d1 = (p[2,0] - p[0,0]) / Nx / 2.0
-        d2 = (p[3,0] - p[1,0]) / Nx / 2.0
-        offset = (d1 + d2) / 2.0
-        #every other row will be shifted in diff(x)/2
-        for i in range(0,len(xi),Nx*2):
-            for j in range(Nx):
-                xi[i+j] += offset
+    d1 = (p[2,0] - p[0,0]) / Nx / 2.0
+    d2 = (p[3,0] - p[1,0]) / Nx / 2.0
+    offset = (d1 + d2) * hexagonalOffset
+    #every other row will be shifted in diff(x) * hexagonalOffset
+    for i in range(0,len(xi)-Nx,Nx*2):
+        for j in range(Nx):
+            xi[i+j+Nx] += offset
     return xi,yi
 
 def alphaRowString(tuple):
