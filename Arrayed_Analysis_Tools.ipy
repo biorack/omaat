@@ -11,8 +11,7 @@ import abc
 import sys
 import pandas as pd
 import datetime
-
-
+import time
 
 try:
     import ipywidgets
@@ -27,13 +26,29 @@ class MassRangeReductionStrategy:
     def reduceImage(self,data):
         pass
 
+    def remoteReduceOperation(self, **kwargs):
+        """
+        Return a string for performing the same reduction operational remotely as part of the data request
+        from OpenMSI. Return None in case remote execution is not supported.
+        """
+        return None
+
+    def supportsRemoteReduce(self):
+        return self.remoteReduceOperation() is not None
+
+
 class PeakArea(MassRangeReductionStrategy):
     def reduceImage(self,data):
         return np.sum(data,2)
+    def remoteReduceOperation(self, **kwargs):
+        return '[{"min_dim": 2, "reduction": "sum", "axis": -1}]'
+
 
 class PeakHeight(MassRangeReductionStrategy):
     def reduceImage(self,data):
         return np.max(data,2)
+    def remoteReduceOperation(self, **kwargs):
+        return '[{"min_dim": 2, "reduction": "max", "axis": -1}]'
 
 class AreaNearPeak(MassRangeReductionStrategy):
     """in stead of simply taking the sum or the max to get the "size" of a peak, this code finds the peak within a range and
@@ -56,6 +71,9 @@ class AreaNearPeak(MassRangeReductionStrategy):
                         continue
                     result[x,y]+=data[x,y,p]
         return result
+
+    def remoteReduceOperation(self, **kwargs):
+        return '[{"min_dim": 2, "reduction": "area_near_peak", "halfpeakwidth": %s}]' % str(self.halfpeakwidth)
 
 class ArrayedImage(object):
     """
@@ -545,12 +563,12 @@ class ArrayedImage(object):
 
 
     def writeResultTable(self,fileName="",spotList=None,minPixelIntensity=0,alphaRows=False):
-        '''
+        """
 
         :param fileName: filename to write to. will automatically be appended with a .csv extension.
                             Default is will use current date and time
         :return:
-        '''
+        """
 
         if fileName:
             actualFileName="{}.csv".format(fileName)
@@ -735,7 +753,7 @@ class OpenMSIsession(object):
         return ipywidgets.Box(children=(title,fileSelector))
 
 
-    def getArrayedImage(self,ions,massRange,massRangePercent=False,filename=None,massRangeReductionStrategy=PeakArea(),expIndex=0,dataIndex=0,verbose=True):
+    def getArrayedImage(self,ions,massRange,massRangePercent=False,filename=None,massRangeReductionStrategy=None,expIndex=0,dataIndex=0,verbose=True,remoteReduce=True):
         """
         Downloads defined ion slices from an OpenMSI image and returns a new ArrayedImage file
         :param ions: Ihe ion (m/z) slices you want to download. A list of floats
@@ -758,14 +776,16 @@ class OpenMSIsession(object):
         :param expIndex: Which OpenMSI experiment index to download
         :param dataIndex: Which OpenMSI data index to download
         :param verbose: If true, prints progress on which ion it's currently loading
+        :param remoteReduce: Perform data reductions remotely on the server if possible (default=True). Set to
+                             False to load all data and reduce localle (usually slower).
         :return: a new ArrayedImage file that contains the reduced data.
         """
+        if massRangeReductionStrategy is None:
+            massRangeReductionStrategy = PeakArea()
         if filename:
             self.filename=filename
         elif not self.filename:
             raise ValueError("Either the filename needs to be set in the arguments, or a file must have been selected in the file selector.")
-
-
 
         payload = {'file':self.filename,'format':'JSON','mtype':'file','expIndex':expIndex,'dataIndex':dataIndex}
         url = 'https://openmsi.nersc.gov/openmsi/qmetadata'
@@ -777,23 +797,34 @@ class OpenMSIsession(object):
         newImage=ArrayedImage(originalSize,ions,self.filename,expIndex,dataIndex,getMZ(self.requests_session,self.filename,expIndex,dataIndex))
         #The new ArrayedImage returned has an empty imStack
         #To populate it, first we'll download the raw data and then reduce it into one slice for every ion
-
+        reduceOnServer = remoteReduce and massRangeReductionStrategy.supportsRemoteReduce()
         for i,ion in enumerate(newImage.ions):
+            startTime = time.time()
             realMassRange = massRange if not massRangePercent else massRange*ion*0.01
-            if(verbose):
+            if verbose:
                 print "loading ion {:d} of {:d}. m/z = {:f} +/- {:f}".format(i+1,len(newImage.ions),ion,realMassRange)
                 sys.stdout.flush()
             idx = np.where(abs(newImage.mz-ion)<realMassRange) #get the m/z indices within the range
             if(len(idx[0])<=0):
                 raise ValueError("Ion {:f} not present in the file {}".format(ion,newImage.filename))
             payload = {'file':newImage.filename,
-                       'expIndex':expIndex,'dataIndex':dataIndex,'format':'JSON','mz':'%d:%d'%(min(idx[0]),max(idx[0]))}
+                       'expIndex':expIndex,
+                       'dataIndex':dataIndex,
+                       'format':'JSON',
+                       'mz':'%d:%d'%(min(idx[0]),max(idx[0]))
+                       }
+            if reduceOnServer:
+                payload['operations'] = massRangeReductionStrategy.remoteReduceOperation()
             url = 'https://openmsi.nersc.gov/openmsi/qcube'
             r = self.requests_session.get(url,params=payload)
             r.raise_for_status()
             data = np.asarray(json.loads(r.content))
-
-            newImage.imStack[:,:,i] = massRangeReductionStrategy.reduceImage(data)
+            if reduceOnServer:
+                newImage.imStack[:,:,i] = data
+            else:
+                newImage.imStack[:,:,i] = massRangeReductionStrategy.reduceImage(data)
+            if verbose:
+                print "Time to load ion: " + str(time.time() - startTime) + " seconds"
 
         newImage.baseImage = np.sum(newImage.imStack,2)
         print "Image has been loaded."
@@ -991,7 +1022,7 @@ class DraggablePoint:
         self.all_annoations=all_annotations
 
     def connect(self):
-        'connect to all the events we need'
+        """connect to all the events we need"""
         self.cidpress = self.point.figure.canvas.mpl_connect('button_press_event', self.on_press)
         self.cidrelease = self.point.figure.canvas.mpl_connect('button_release_event', self.on_release)
         self.cidmotion = self.point.figure.canvas.mpl_connect('motion_notify_event', self.on_motion)
@@ -1008,7 +1039,7 @@ class DraggablePoint:
 
 
     def on_release(self, event):
-        'on release we reset the press data'
+        """on release we reset the press data"""
         self.press = None
         lock = None
         if DraggablePoint.lock is not self:
@@ -1032,7 +1063,7 @@ class DraggablePoint:
         self.point.figure.canvas.draw()
 
     def disconnect(self):
-        'disconnect all the stored connection ids'
+        """disconnect all the stored connection ids"""
         self.point.figure.canvas.mpl_disconnect(self.cidpress)
         self.point.figure.canvas.mpl_disconnect(self.cidrelease)
         self.point.figure.canvas.mpl_disconnect(self.cidmotion)
@@ -1058,7 +1089,7 @@ class DraggablePointForBarycentricInterpolation:
 
 
     def connect(self):
-        'connect to all the events we need'
+        """connect to all the events we need"""
         self.cidpress = self.point.figure.canvas.mpl_connect('button_press_event', self.on_press)
         self.cidrelease = self.point.figure.canvas.mpl_connect('button_release_event', self.on_release)
         self.cidmotion = self.point.figure.canvas.mpl_connect('motion_notify_event', self.on_motion)
@@ -1138,10 +1169,10 @@ def barycentric_trapezoidial_interpolation(Nx,Ny,p,hexagonalOffset=0.5):
     #     xi,yi = openmsi.barycentric_trapezoidial_interpolation(Nx,Ny,newCoords)
     #     a.plot(xi,yi,'.',markersize=12)
     # plt.show()
-        
+
     x_basis = np.linspace(0,1,Nx)
     y_basis = np.linspace(0,1,Ny)
-        
+
     px = [[p[0,0], p[2,0]],[p[1,0], p[3,0]]] #these are the [2,2] x-coordinates
     py = [[p[0,1], p[2,1]],[p[1,1], p[3,1]]] #these are the [2,2] x-coordinates
     #fx = interpolate.interp2d([1,0], [1,0], px, kind='linear')
