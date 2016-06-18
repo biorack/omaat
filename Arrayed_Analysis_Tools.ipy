@@ -166,7 +166,6 @@ class ArrayedImage(object):
         for d in circles:
             p.append(d.center)
         p = np.asarray(p)
-        print len(p)
         xi,yi = barycentric_trapezoidial_interpolation(Nx,Ny,p,hexagonalOffset=hexagonalOffset)
 
         h1, = ax.plot(xi,yi,'.',markersize=pointMarkerSize)
@@ -599,16 +598,16 @@ class ArrayedImage(object):
             fileHandler.write('%d,%s,%s,%s,%d,%d,' % ( i, self.filename,
                                                              chr(ord('A')+self.spotLocations[i][0]-1) if alphaRows else str(self.spotLocations[i][0]),
                                                              self.spotLocations[i][1], np.mean(myPixel[:,0]), np.mean(myPixel[:,1]) ) )
-            for i,ion in enumerate(self.ions): #how many ions
+            for j,ion in enumerate(self.ions): #how many ions
                 values = []
-                for j, coord in enumerate(myPixel): #how many pixels per spot
-                    if self.imStack[coord[0],coord[1],i] > minPixelIntensity:
+                for coord in myPixel: #how many pixels per spot
+                    if self.imStack[coord[0],coord[1],j] > minPixelIntensity:
                         #print self.imStack[coord[0],coord[1],i]
                         #print coord[0],coord[1],i
                         #accumulate a list of peak height or
                         #peak area values for each pixel
                         #assigned to each spot
-                        values.append(self.imStack[coord[0],coord[1],i])
+                        values.append(self.imStack[coord[0],coord[1],j])
                 if len(values) > 0:
                     fileHandler.write('%d,%d,%d,%d,%d,' % (np.sum(values),np.max(values),np.mean(values),np.median(values),len(values)))
                 else:
