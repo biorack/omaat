@@ -1,4 +1,11 @@
 from __future__ import print_function
+from __future__ import division
+from __future__ import unicode_literals
+from builtins import zip
+from builtins import chr
+from builtins import str
+from builtins import range
+from builtins import object
 from builtins import input
 
 import numpy as np
@@ -13,7 +20,8 @@ import abc
 import sys
 import pandas as pd
 import datetime
-
+import time
+from future.utils import with_metaclass
 
 
 try:
@@ -22,20 +30,35 @@ except ImportError:
     import IPython.html.widgets as ipywidgets
 
 
-class MassRangeReductionStrategy:
-    __metaclass__ = abc.ABCMeta
+class MassRangeReductionStrategy(with_metaclass(abc.ABCMeta, object)):
 
     @abc.abstractmethod
     def reduceImage(self,data):
         pass
 
+    def remoteReduceOperation(self, **kwargs):
+        """
+        Return a string for performing the same reduction operational remotely as part of the data request
+        from OpenMSI. Return None in case remote execution is not supported.
+        """
+        return None
+
+    def supportsRemoteReduce(self):
+        return self.remoteReduceOperation() is not None
+
+
 class PeakArea(MassRangeReductionStrategy):
     def reduceImage(self,data):
         return np.sum(data,2)
+    def remoteReduceOperation(self, **kwargs):
+        return '[{"min_dim": 2, "reduction": "sum", "axis": -1}]'
+
 
 class PeakHeight(MassRangeReductionStrategy):
     def reduceImage(self,data):
         return np.max(data,2)
+    def remoteReduceOperation(self, **kwargs):
+        return '[{"min_dim": 2, "reduction": "max", "axis": -1}]'
 
 class AreaNearPeak(MassRangeReductionStrategy):
     """in stead of simply taking the sum or the max to get the "size" of a peak, this code finds the peak within a range and
@@ -50,7 +73,7 @@ class AreaNearPeak(MassRangeReductionStrategy):
         maxMasses = np.argmax(data,2)
         for x in range(data.shape[0]):
             for y in range(data.shape[1]):
-                peak=(range(-self.halfpeakwidth,self.halfpeakwidth+1)+maxMasses[x,y]).astype(int)
+                peak=(list(range(-self.halfpeakwidth,self.halfpeakwidth+1))+maxMasses[x,y]).astype(int)
                 for p in peak:
                     if p<0:
                         continue
@@ -58,6 +81,9 @@ class AreaNearPeak(MassRangeReductionStrategy):
                         continue
                     result[x,y]+=data[x,y,p]
         return result
+
+    def remoteReduceOperation(self, **kwargs):
+        return '[{"min_dim": 2, "reduction": "area_near_peak", "halfpeakwidth": %s}]' % str(self.halfpeakwidth)
 
 class ArrayedImage(object):
     """
@@ -150,7 +176,6 @@ class ArrayedImage(object):
         for d in circles:
             p.append(d.center)
         p = np.asarray(p)
-        print(len(p))
         xi,yi = barycentric_trapezoidial_interpolation(Nx,Ny,p,hexagonalOffset=hexagonalOffset)
 
         h1, = ax.plot(xi,yi,'.',markersize=pointMarkerSize)
@@ -323,7 +348,7 @@ class ArrayedImage(object):
 
         imWidth=imStack2.shape[1]
         imHeight=imStack2.shape[0]
-        xEdges, yEdges = np.meshgrid(range(imWidth), range(imHeight), sparse=False, indexing='xy')
+        xEdges, yEdges = np.meshgrid(list(range(imWidth)), list(range(imHeight)), sparse=False, indexing='xy')
 
         xCenter=self.xCenters
         yCenter=self.yCenters
@@ -341,8 +366,8 @@ class ArrayedImage(object):
                     best=0
                     bestX=xCenter[i]
                     bestY=yCenter[i]
-                    for newX in (range(-halfboxsize,halfboxsize+1)+xCenter[i]):
-                        for newY in (range(-halfboxsize,halfboxsize+1)+yCenter[i]):
+                    for newX in (list(range(-halfboxsize,halfboxsize+1))+xCenter[i]):
+                        for newY in (list(range(-halfboxsize,halfboxsize+1))+yCenter[i]):
                             if newX<0 or newX>=imWidth or newY<0 or newY>=imHeight:
                                 if(raiseExceptions):
                                     raise IndexError("a location outside of the image was tried for a spot")
@@ -375,7 +400,7 @@ class ArrayedImage(object):
                         if raiseExceptions or best<=0: #if the score is <=0 something bad must be going on
                             raise SpotOptimizationException()
                         elif(verbose):
-                            print("Score of spot # %d is %d but need > %d. Location stays as it was before."%(i,int(best), minimumScore))
+                            print("Best score of spot # %d is %d but need > %d. Location stays as it was before."%(i,int(best), minimumScore))
                     cyclenumber = numberOfSpots*round+i
                     if(progressbar):
                         progressbar.value=100*cyclenumber/(numberOfSpots*optimizationrounds)
@@ -452,7 +477,7 @@ class ArrayedImage(object):
             numberOfSpots=len(self.xCenters)
             for box in ionWeightBoxes:
                 ionweights.append(box.value)
-            xEdges, yEdges = np.meshgrid(range(imWidth), range(imHeight), sparse=False, indexing='xy')
+            xEdges, yEdges = np.meshgrid(list(range(imWidth)), list(range(imHeight)), sparse=False, indexing='xy')
             for i in range(numberOfSpots):
                 currentSpot=oneSpotMask(xEdges,yEdges,self.xCenters[i],self.yCenters[i],integrationRadiusBox.value)
                 result=sum(sumPixels(currentSpot,self.imStack)*ionweights)/len(currentSpot)
@@ -487,7 +512,7 @@ class ArrayedImage(object):
 
         if self.xCenters is None:
             raise ValueError("There are no defined spots")
-        xEdges, yEdges = np.meshgrid(range(self.imStack.shape[1]), range(self.imStack.shape[0]), sparse=False, indexing='xy')
+        xEdges, yEdges = np.meshgrid(list(range(self.imStack.shape[1])), list(range(self.imStack.shape[0])), sparse=False, indexing='xy')
 
         myPixels = []
         tallies={}
@@ -547,12 +572,12 @@ class ArrayedImage(object):
 
 
     def writeResultTable(self,fileName="",spotList=None,minPixelIntensity=0,alphaRows=False):
-        '''
+        """
 
         :param fileName: filename to write to. will automatically be appended with a .csv extension.
                             Default is will use current date and time
         :return:
-        '''
+        """
 
         if fileName:
             actualFileName="{}.csv".format(fileName)
@@ -561,7 +586,7 @@ class ArrayedImage(object):
             actualFileName="openmsi_arrayed_analysis_results_{:d}-{:d}-{:d}_{:d}h{:d}.csv".format(dt.year,dt.month,dt.day,dt.hour,dt.minute)
 
 
-        fileHandler=open(actualFileName,'wb')
+        fileHandler=open(actualFileName,'w')
 
         if not spotList:
             if not self.spotList:
@@ -583,16 +608,16 @@ class ArrayedImage(object):
             fileHandler.write('%d,%s,%s,%s,%d,%d,' % ( i, self.filename,
                                                              chr(ord('A')+self.spotLocations[i][0]-1) if alphaRows else str(self.spotLocations[i][0]),
                                                              self.spotLocations[i][1], np.mean(myPixel[:,0]), np.mean(myPixel[:,1]) ) )
-            for i,ion in enumerate(self.ions): #how many ions
+            for j,ion in enumerate(self.ions): #how many ions
                 values = []
-                for j, coord in enumerate(myPixel): #how many pixels per spot
-                    if self.imStack[coord[0],coord[1],i] > minPixelIntensity:
+                for coord in myPixel: #how many pixels per spot
+                    if self.imStack[coord[0],coord[1],j] > minPixelIntensity:
                         #print self.imStack[coord[0],coord[1],i]
                         #print coord[0],coord[1],i
                         #accumulate a list of peak height or
                         #peak area values for each pixel
                         #assigned to each spot
-                        values.append(self.imStack[coord[0],coord[1],i])
+                        values.append(self.imStack[coord[0],coord[1],j])
                 if len(values) > 0:
                     fileHandler.write('%d,%d,%d,%d,%d,' % (np.sum(values),np.max(values),np.mean(values),np.median(values),len(values)))
                 else:
@@ -698,7 +723,7 @@ class OpenMSIsession(object):
         r = self.requests_session.get(url,params=payload)
         r.raise_for_status()
         fileList = json.loads(r.content.decode('utf-8'))
-        return fileList.keys()
+        return list(fileList.keys())
 
 
 
@@ -737,7 +762,7 @@ class OpenMSIsession(object):
         return ipywidgets.Box(children=(title,fileSelector))
 
 
-    def getArrayedImage(self,ions,massRange,massRangePercent=False,filename=None,massRangeReductionStrategy=PeakArea(),expIndex=0,dataIndex=0,verbose=True):
+    def getArrayedImage(self,ions,massRange,massRangePercent=False,filename=None,massRangeReductionStrategy=None,expIndex=0,dataIndex=0,verbose=True,remoteReduce=True):
         """
         Downloads defined ion slices from an OpenMSI image and returns a new ArrayedImage file
         :param ions: Ihe ion (m/z) slices you want to download. A list of floats
@@ -760,42 +785,59 @@ class OpenMSIsession(object):
         :param expIndex: Which OpenMSI experiment index to download
         :param dataIndex: Which OpenMSI data index to download
         :param verbose: If true, prints progress on which ion it's currently loading
+        :param remoteReduce: Perform data reductions remotely on the server if possible (default=True). Set to
+                             False to load all data and reduce localle (usually slower).
         :return: a new ArrayedImage file that contains the reduced data.
         """
+        if massRangeReductionStrategy is None:
+            massRangeReductionStrategy = PeakArea()
         if filename:
             self.filename=filename
         elif not self.filename:
             raise ValueError("Either the filename needs to be set in the arguments, or a file must have been selected in the file selector.")
 
-
-
         payload = {'file':self.filename,'format':'JSON','mtype':'file','expIndex':expIndex,'dataIndex':dataIndex}
         url = 'https://openmsi.nersc.gov/openmsi/qmetadata'
         r = self.requests_session.get(url,params=payload)
         r.raise_for_status()
-        metadata = json.loads(r.content)
+        metadata = json.loads(r.content.decode('utf-8'))
         originalSize = ast.literal_eval(metadata[u'children'][0][u'shape'])
 
         newImage=ArrayedImage(originalSize,ions,self.filename,expIndex,dataIndex,getMZ(self.requests_session,self.filename,expIndex,dataIndex))
         #The new ArrayedImage returned has an empty imStack
         #To populate it, first we'll download the raw data and then reduce it into one slice for every ion
-
+        reduceOnServer = remoteReduce and massRangeReductionStrategy.supportsRemoteReduce()
         for i,ion in enumerate(newImage.ions):
+            startTime = time.time()
             realMassRange = massRange if not massRangePercent else massRange*ion*0.01
-            if(verbose):
-                print("loading ion {:d} of {:d}. m/z = {:f} +/- {:f}".format(i+1,len(newImage.ions),ion,realMassRange))
+            if verbose:
+                print ("loading ion {:d} of {:d}. m/z = {:f} +/- {:f}".format(i+1,len(newImage.ions),ion,realMassRange))
                 sys.stdout.flush()
             idx = np.where(abs(newImage.mz-ion)<realMassRange) #get the m/z indices within the range
             if(len(idx[0])<=0):
                 raise ValueError("Ion {:f} not present in the file {}".format(ion,newImage.filename))
             payload = {'file':newImage.filename,
-                       'expIndex':expIndex,'dataIndex':dataIndex,'format':'JSON','mz':'%d:%d'%(min(idx[0]),max(idx[0]))}
+                       'expIndex':expIndex,
+                       'dataIndex':dataIndex,
+                       'format':'JSON',
+                       'mz':'%d:%d'%(min(idx[0]),max(idx[0]))
+                       }
+            if reduceOnServer:
+                payload['operations'] = massRangeReductionStrategy.remoteReduceOperation()
             url = 'https://openmsi.nersc.gov/openmsi/qcube'
+            if verbose:
+                print(payload)
             r = self.requests_session.get(url,params=payload)
             r.raise_for_status()
-            data = np.asarray(json.loads(r.content))
-
-            newImage.imStack[:,:,i] = massRangeReductionStrategy.reduceImage(data)
+            data = np.asarray(json.loads(r.content.decode('utf-8')))
+            if reduceOnServer:
+                newImage.imStack[:,:,i] = data
+            else:
+                if verbose:
+                    print("Performing mass range reduction locally...")
+                newImage.imStack[:,:,i] = massRangeReductionStrategy.reduceImage(data)
+            if verbose:
+                print ("Time to load ion: " + str(time.time() - startTime) + " seconds")
 
         newImage.baseImage = np.sum(newImage.imStack,2)
         print("Image has been loaded.")
@@ -942,7 +984,7 @@ def getMZ(client,filename,expIndex,dataIndex):
     url = 'https://openmsi.nersc.gov/openmsi/qmz'
     r = client.get(url,params=payload)
     r.raise_for_status()
-    data = json.loads(r.content)
+    data = json.loads(r.content.decode('utf-8'))
     return np.asarray(data[u'values_spectra'])
 
 def oneSpotMask(xEdges,yEdges,x,y,integrationRadius):
@@ -983,7 +1025,7 @@ class SpotOptimizationException(Exception):
 
 
 
-class DraggablePoint:
+class DraggablePoint(object):
     lock = None #only one can be animated at a time
     def __init__(self, point,annotation,all_annotations):
         self.point = point
@@ -993,7 +1035,7 @@ class DraggablePoint:
         self.all_annoations=all_annotations
 
     def connect(self):
-        'connect to all the events we need'
+        """connect to all the events we need"""
         self.cidpress = self.point.figure.canvas.mpl_connect('button_press_event', self.on_press)
         self.cidrelease = self.point.figure.canvas.mpl_connect('button_release_event', self.on_release)
         self.cidmotion = self.point.figure.canvas.mpl_connect('motion_notify_event', self.on_motion)
@@ -1010,7 +1052,7 @@ class DraggablePoint:
 
 
     def on_release(self, event):
-        'on release we reset the press data'
+        """on release we reset the press data"""
         self.press = None
         lock = None
         if DraggablePoint.lock is not self:
@@ -1034,13 +1076,13 @@ class DraggablePoint:
         self.point.figure.canvas.draw()
 
     def disconnect(self):
-        'disconnect all the stored connection ids'
+        """disconnect all the stored connection ids"""
         self.point.figure.canvas.mpl_disconnect(self.cidpress)
         self.point.figure.canvas.mpl_disconnect(self.cidrelease)
         self.point.figure.canvas.mpl_disconnect(self.cidmotion)
 
 
-class DraggablePointForBarycentricInterpolation:
+class DraggablePointForBarycentricInterpolation(object):
     # make an interactive plot, move the 4 vertices of the trapezoid around
     # as they are moved, redraw the interior points of our grid
 
@@ -1060,7 +1102,7 @@ class DraggablePointForBarycentricInterpolation:
 
 
     def connect(self):
-        'connect to all the events we need'
+        """connect to all the events we need"""
         self.cidpress = self.point.figure.canvas.mpl_connect('button_press_event', self.on_press)
         self.cidrelease = self.point.figure.canvas.mpl_connect('button_release_event', self.on_release)
         self.cidmotion = self.point.figure.canvas.mpl_connect('motion_notify_event', self.on_motion)
