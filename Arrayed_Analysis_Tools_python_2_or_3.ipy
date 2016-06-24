@@ -605,7 +605,7 @@ class ArrayedImage(object):
 
         for i,myPixel in enumerate(spotList): #how many spots
 
-            fileHandler.write('%d,%s,%s,%s,%d,%d,' % ( i, self.filename,
+            fileHandler.write('%d,%s,%s,%s,%f,%f,' % ( i, self.filename,
                                                              chr(ord('A')+self.spotLocations[i][0]-1) if alphaRows else str(self.spotLocations[i][0]),
                                                              self.spotLocations[i][1], np.mean(myPixel[:,0]), np.mean(myPixel[:,1]) ) )
             for j,ion in enumerate(self.ions): #how many ions
@@ -619,7 +619,7 @@ class ArrayedImage(object):
                         #assigned to each spot
                         values.append(self.imStack[coord[0],coord[1],j])
                 if len(values) > 0:
-                    fileHandler.write('%d,%d,%d,%d,%d,' % (np.sum(values),np.max(values),np.mean(values),np.median(values),len(values)))
+                    fileHandler.write('%f,%f,%f,%f,%d,' % (np.sum(values),np.max(values),np.mean(values),np.median(values),len(values)))
                 else:
                     fileHandler.write('%d,%d,%d,%d,%d,' % (0,0,0,0,len(values)))
 
@@ -825,8 +825,8 @@ class OpenMSIsession(object):
             if reduceOnServer:
                 payload['operations'] = massRangeReductionStrategy.remoteReduceOperation()
             url = 'https://openmsi.nersc.gov/openmsi/qcube'
-            if verbose:
-                print(payload)
+            #if verbose:
+            #    print(payload)
             r = self.requests_session.get(url,params=payload)
             r.raise_for_status()
             data = np.asarray(json.loads(r.content.decode('utf-8')))
