@@ -208,6 +208,8 @@ class ArrayedImage(object):
         """
         Use a GUI to check the positions of the spots and manually adjust them if need be
         :param markerRadius: the radius of the draggable markers in the GUI. Default is 2.
+                             Because these markers are drawn by matplotlib on top of a scaled MS image,
+                             the the radius of the markers the radius of the spots may not always match exactly
         :param colormap: colormap of the base image. Default is 'gray'
         :param spotLabelsAlwaysOn: show Row/Column lables on the spots all the time?
         :return: no return value.
@@ -323,8 +325,10 @@ class ArrayedImage(object):
                                            the pixels in a spot's integration map are shared by another spot.
                                            pixel-wise overlap checking is much slower, so only use it if
                                            distance-wise is not satisfactory. Default is False.
-        :param overlapDistance_squared: Only used if pixelwiseOverlapAvoidance is False.
-                                        By default the overlapDistance is integrationRadius+1
+        :param overlapDistance_squared: The minimum distance two spots have to be from each other,
+                                        from center to center, to not be considered overlapping
+                                        Only used if pixelwiseOverlapAvoidance is False.
+                                        By default the overlapDistance is integrationRadius*2
         :param verbose: Prints the progress and any irregularities that occur during the optimization. Default is False
         :param raiseExceptions: Raise exceptions if either:
                                 1) spots are so close to the image's edge that the algorithm tries to place spots there
@@ -338,14 +342,14 @@ class ArrayedImage(object):
                              location. If there are spots missing in the grid, you may want to set this. Default is 0.
         :return: no return value
         """
+        
         if self.xCenters is None:
             raise ValueError("You can't run the optimizer because there are no defined spots")
 
         if not overlapDistance_squared:
-            overlapDistance_squared=(integrationRadius+1)**2
+            overlapDistance_squared=(integrationRadius*2.0)**2
 
         imStack2=self.imStack
-
         imWidth=imStack2.shape[1]
         imHeight=imStack2.shape[0]
         xEdges, yEdges = np.meshgrid(list(range(imWidth)), list(range(imHeight)), sparse=False, indexing='xy')
@@ -866,7 +870,7 @@ class OpenMSIsession(object):
             ionList.options=[]
             ionList.options=[str(x) for x in sorted(ionSet)]
             global openmsi_default_ions
-            openmsi_default_ions = list(ionSet)
+            openmsi_default_ions = sorted(ionSet)
             %store openmsi_default_ions
 
         def removeion(widget):
@@ -874,7 +878,7 @@ class OpenMSIsession(object):
             ionList.options=[]
             ionList.options=[str(x) for x in sorted(ionSet)]
             global openmsi_default_ions
-            openmsi_default_ions = list(ionSet)
+            openmsi_default_ions = sorted(ionSet)
             %store openmsi_default_ions
 
         addIonButton.on_click(addion)
@@ -1016,12 +1020,13 @@ def doesThisOverlap_distancewise(newX,newY,xCenter,yCenter,ignoreThisSpotNumber,
 
 class SpotOptimizationException(Exception):
     def __init__(self):
-        Exception.__init__(self,("The optimization algorithm was unable to optimize a spot." +
-                    "This could be because there is no signal, because the ion weighting"+
-                    "is all zeroes, the overlapDistance is too large in Distance mode, or"+
-                    ", in Pixel Overlap mode, spots are overlapping so severely at the"+
-                    "beginning of this routine that it could not find a new location no"+
-                    "more than halfboxsize away that does /not/ overlap with another spot."))
+        Exception.__init__(self,("The optimization algorithm was unable to optimize a spot. " +
+                    "This could be because there is no signal, because the ion weighting "+
+                    "is all zeroes, the overlapDistance is too large in Distance mode, or "+
+                    ", in Pixel Overlap mode, spots are overlapping so severely at the "+
+                    "beginning of this routine that it could not find a new location no "+
+                    "more than halfboxsize away that does /not/ overlap with another spot.\n"+
+                    "Think of it as a spot being 'checkmate': There's nowhere it can go"))
 
 
 
