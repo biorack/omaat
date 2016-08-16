@@ -109,6 +109,7 @@ class ArrayedImage(object):
         self.spotLocations=None
         self.Nrows=None
         self.Ncolumns=None
+        self.spectra_df=None
 
 
     def __str__(self):
@@ -532,19 +533,25 @@ class ArrayedImage(object):
 
     def generateMaskedImage(self,spotList=None):
         """
+        Generate a mask image that indicates which pixels are included in the spotList
+        You can view this image with matplotlib
+        If you want to see the spots labeled, use the showMaskedImage() method.
 
-        :param spotList:
+        :param spotList: List of lists of pixels that defines the locations of the spots on the image
+                            The default is the last-calculated spotlist for this image.
         :return: An image that can be viewed using matplotlib's imshow()
         """
+        _spotList=spotList
+
         if not spotList:
             if not self.spotList:
                 raise ValueError("Need to either pass a spot list in the method argument,"+
                                  "or have generated a spotList using generateSpotList at some point")
-            spotList=self.spotList
+            _spotList=self.spotList
 
         mask = np.zeros(self.baseImage.shape)
 
-        for spot in spotList:
+        for spot in _spotList:
             for i in spot:
                 mask[i[0],i[1]] = 1
         return mask
@@ -552,20 +559,24 @@ class ArrayedImage(object):
 
     def showMaskedImage(self,spotList=None,alphaRows=True):
         """
-
-        :param alphaRows: If this is set to True, the image will use A,B,C... for the rows. if it's set to False, it'll plot a numeric tuple
+        Generates the Mask Image using generateMaskedImage(spotList=spotList) and displays it using matplotlib,
+        nicely annotated with the identity of each spot
+        :param alphaRows: If this is set to True, the image will use A,B,C... for the rows.
+                          If it's set to False, it'll plot a numeric tuple
         """
 
         if spotList is None:
             global arrayed_analysis_radius
             %store -r arrayed_analysis_radius
-            spots=img.generateSpotList(integrationRadius=arrayed_analysis_radius)
+            spots=self.generateSpotList(integrationRadius=arrayed_analysis_radius)
 
 
         maskedimg=self.generateMaskedImage(spotList=spotList)
 
         plt.imshow(maskedimg)
-        ap={"linewidth":0, "facecolor":"g", "width":2,"frac":0}
+        #ap={"linewidth":0, "facecolor":"g", "width":2,"headwidth":2}#,"frac":0}#, "headlength":0}
+        #ap={"arrowstyle":"->, head_width=.3", "facecolor":"g","edgecolor":"g","linewidth":2}
+        ap={"arrowstyle":"-", "facecolor":"g","edgecolor":"g","linewidth":2}
         xshift = min(4,(max(self.xCenters)-min(self.xCenters))/self.Ncolumns/4.0)
         yshift = min(4,(max(self.yCenters)-min(self.yCenters))/self.Nrows/4.0)
         for i in range(len(self.xCenters)):
@@ -592,11 +603,13 @@ class ArrayedImage(object):
 
         fileHandler=open(actualFileName,'w')
 
+        _spotList=spotList
+
         if not spotList:
             if not self.spotList:
                 raise ValueError("Need to either pass a spot list in the method argument,"+
                                  "or have generated a spotList using generateSpotList at some point")
-            spotList=self.spotList
+            _spotList=self.spotList
 
         fileHandler.write('index,file,row,column,row-centroid,col-centroid,')
         for i in self.ions:
@@ -607,7 +620,7 @@ class ArrayedImage(object):
             fileHandler.write('%5.4f NumPixels,' % i)
         fileHandler.write('\n')
 
-        for i,myPixel in enumerate(spotList): #how many spots
+        for i,myPixel in enumerate(_spotList): #how many spots
 
             fileHandler.write('%d,%s,%s,%s,%f,%f,' % ( i, self.filename,
                                                              chr(ord('A')+self.spotLocations[i][0]-1) if alphaRows else str(self.spotLocations[i][0]),
@@ -658,12 +671,13 @@ class ArrayedImage(object):
                             and number of pixels more intense than the minPixelIntensity.
         """
 
+        _spotList=spotList
+
         if not spotList:
             if not self.spotList:
                 raise ValueError("Need to either pass a spot list in the method argument,"+
                                  "or have generated a spotList using generateSpotList at some point")
-            spotList=self.spotList
-
+            _spotList=self.spotList
 
         df= None
 
@@ -683,7 +697,7 @@ class ArrayedImage(object):
 
             df=pd.DataFrame(index=rowIndexes,columns=colnames)
 
-        for s,spot in enumerate(spotList): #how many spots
+        for s,spot in enumerate(_spotList): #how many spots
             if not multiIndex:
                 df.set_value(rowIndexes[s],'horizontal_coordinate',np.mean(spot[:,0]))
                 df.set_value(rowIndexes[s],'vertical_coordinate',np.mean(spot[:,1]))
@@ -922,6 +936,76 @@ class OpenMSIsession(object):
             print("Image has been saved in the global 'img' variable.")
 
         OKbutton.on_click(do_load)
+
+    def getSpotSpectra(self,img,spotList=None,alphaRows=True,verbose=False):
+        """
+        Get an average mass spectrum for each of the spots in an image.
+        :param img: An ArrayedImage. If it does not have spots defined yet, this function will call
+                    generateSpotList(integrationRadius=arrayed_analysis_radius) on the image first.
+        :param spotList: List of lists of pixels that defines the locations of the spots on the image
+                            The default is the last-calculated spotlist for this image.
+                            If you supply your own spot list, the column names will just be integers,
+                            because the function can't be sure if the spots passed are the same spots
+                            that are defined in the image.
+        :param alphaRows:
+                            If True, sets the column names of the data frame to strings with an alphabetical
+                            identifier. alphaRows=False sets the column names to 2-tuples (row,column).
+                            Default is True, ignored if spotList is defined.
+        :param verbose:     If Ture, ouput which spot's spectrum just finished the loading process
+        :return:     A dataframe with intensities at various m/z values.
+                     Row indexes are m/z values and columns correspond to different spots
+                     (Be aware this is different from how the resultsDataFrame is laid out!!)
+        """
+
+        _spotList=spotList
+        colIndexes=None
+
+        if not spotList:
+            if not img.spotList:
+                raise ValueError("Need to either pass a spot list in the method argument,"+
+                                 "or have generated a spotList using generateSpotList at some point")
+            _spotList=img.spotList
+            colIndexes=img.spotLocations
+        else:
+            colIndexes=range(len(spotList))
+
+
+        if alphaRows:
+            colIndexes=[alphaRowString(sl) for sl in img.spotLocations]
+
+
+
+        payload = {'file':img.filename,
+          'expIndex':img.expIndex,'dataIndex':img.dataIndex,'qspectrum_viewerOption':'0',
+          'qslice_viewerOption':'0',
+          'col':0,'row':0,
+          'findPeak':'0','format':'JSON'}
+        url = 'https://openmsi.nersc.gov/openmsi/qmz'
+        r = self.requests_session.get(url,params=payload)
+        r.raise_for_status()
+        data = json.loads(r.text)
+        mz = np.asarray(data[u'values_spectra'])
+
+        dataframe = pd.DataFrame(index=mz, dtype='float64',columns=colIndexes)
+
+        payload = {'file':img.filename,
+                      'expIndex':img.expIndex,'dataIndex':img.dataIndex,'qspectrum_viewerOption':'0',
+                  'qslice_viewerOption':'0','operations':'[{"reduction":"mean","axis":0,"min_dim":2}]',
+                      'findPeak':'0','format':'JSON'}
+        url = 'https://openmsi.nersc.gov/openmsi/qspectrum'
+
+        for i,coord in enumerate(_spotList):
+            payload['col'] = '[' + ','.join([str(c[1]) for c in coord]) + ']'
+            payload['row'] = '[' + ','.join([str(c[0]) for c in coord]) + ']'
+            r = self.requests_session.get(url,params=payload)
+            data = json.loads(r.text)
+            dataframe.iloc[:,i]=data[u'spectrum']
+            if(verbose):
+                print("Finished loading spectrum {:d} out of {:d}".format(i+1,len(_spotList)))
+            #dataframe[i]=
+            #df['coords'].append(coords)
+            #df['spectra'].append(data)
+        return dataframe
 
 
 def login(username=""):
