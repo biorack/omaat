@@ -14,24 +14,24 @@ OpenMSI Arrayed Analysis Toolkit (OMAAT) is a new method to analyze spatially de
 
 ## Installation and Requirements
 
-OMAAT is written as a Python module and released as an open-source project under BSD license #... . In order to use Python and Jupyter notebooks, installation of both Python and Jupyter is required. Download and installation instructions for Jupyter and Python can found at the project Jupyter website (http://jupyter.readthedocs.org/en/latest/install.html). 
+OMAAT is written as a Python module and released as an open-source project under BSD license #... . 
 
-OMAAT requires Jupyter version 4.1+ and python version 2.7+ or 3.2+. We recommend using the Anaconda distribution of python available here: https://www.continuum.io/downloads.
+Anaconda comes bundled with many python packages useful for data analysis.  If you already have Anaconda, make sure your packages are up to date.  OMAAT requires Jupyter version 4.1+ and python version 2.7+ or 3.2+. We recommend using the Anaconda distribution of python available here: https://www.continuum.io/downloads.
 
-Anaconda comes bundled with many python packages useful for data analysis.  If you already have Anaconda, make sure your packages are up to data.  In addition to the base anaconda installation, you will need to install the python package, “future”.  With anaconda this is done using the conda package manager
+In addition to the base anaconda installation, you will need to install the python package, “future”.  With anaconda this is done using the conda package manager.
 
 ```
 conda install future
 ```
 
-Code can be obtained from the command line by:
+OMAAT code can be obtained from the command line by:
 
 ```
 git clone https://github.com/biorack/OpenMSI_Arrayed_Analysis_Tools.git
 ```
-Or by downloading and uncompressing the zip file of the repo here: https://github.com/biorack/OpenMSI_Arrayed_Analysis_Tools/archive/master.zip
+or by downloading and uncompressing the zip file of the repo here: https://github.com/biorack/OpenMSI_Arrayed_Analysis_Tools/archive/master.zip
 
-To launch the notebook from a terminal, change directories to the OMAAT code.  And type
+To launch the notebook from a terminal, change to the OMAAT code directory.  And type
 ```
 jupyter notebook
 ```
