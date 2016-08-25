@@ -28,6 +28,7 @@ The widgets in this notebook require the widgetsnbextension package.  This can b
 
 ```
 conda install widgetsnbextension
+jupyter nbextension enable --py --sys-prefix widgetsnbextension
 ```
 
 OMAAT code can be obtained from the command line by:
