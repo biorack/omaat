@@ -1,3 +1,5 @@
 .ipynb_checkpoints/
 *.pyc
 *.tab
+*.pkl
+*.DS_Store
