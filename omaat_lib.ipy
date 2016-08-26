@@ -131,7 +131,7 @@ class ArrayedImage(object):
                 "\n# of spot locations defined: "+spotstr+\
                 "\n# of spot pixel masks defined: "+spotListstr
 
-    def roughPosition(self,Nx,Ny,dragRadius=4,pointMarkerSize=12,colormap='gray',hexagonalOffset=0):
+    def roughPosition(self,Nx,Ny,dragRadius=4,pointMarkerSize=12,hexagonalOffset=0,colormap='gray',markercolor='blue'):
         """
         Use a GUI to define a trapezoidal grid of spot centers
         If there are spot centers stored in this object already, this method will overwrite them!
@@ -156,10 +156,10 @@ class ArrayedImage(object):
     #    xPos = [0,bkImage.shape[0]]
 
         circles = []
-        circles.append(patches.Circle((0,0), dragRadius, fc='black', alpha=0.5, ))
-        circles.append(patches.Circle((0,bkImage.shape[0]), dragRadius, fc='b', alpha=0.5, ))
-        circles.append(patches.Circle((bkImage.shape[1],0), dragRadius, fc='b', alpha=0.5, ))
-        circles.append(patches.Circle((bkImage.shape[1],bkImage.shape[0]), dragRadius, fc='b', alpha=0.5, ))
+        circles.append(patches.Circle((0,0), dragRadius, fc=markercolor, alpha=0.5, ))
+        circles.append(patches.Circle((0,bkImage.shape[0]), dragRadius, fc=markercolor, alpha=0.5, ))
+        circles.append(patches.Circle((bkImage.shape[1],0), dragRadius, fc=markercolor, alpha=0.5, ))
+        circles.append(patches.Circle((bkImage.shape[1],bkImage.shape[0]), dragRadius, fc=markercolor, alpha=0.5, ))
 
 
         rowAlpha=chr(ord('A')+Ny-1)
@@ -180,7 +180,7 @@ class ArrayedImage(object):
         p = np.asarray(p)
         xi,yi = barycentric_trapezoidial_interpolation(Nx,Ny,p,hexagonalOffset=hexagonalOffset)
 
-        h1, = ax.plot(xi,yi,'.',markersize=pointMarkerSize)
+        h1, = ax.plot(xi,yi,'.',markersize=pointMarkerSize,color=markercolor)
 
         drs = []
         for c,circ in enumerate(circles):
@@ -206,7 +206,7 @@ class ArrayedImage(object):
 
 
 
-    def fineTunePosition(self,markerRadius=3,colormap='gray',spotLabelsAlwaysOn=False):
+    def fineTunePosition(self,markerRadius=3,colormap='gray',markercolor="blue",spotLabelsAlwaysOn=False):
         """
         Use a GUI to check the positions of the spots and manually adjust them if need be
         :param markerRadius: the radius of the draggable markers in the GUI. Default is 2.
@@ -241,7 +241,7 @@ class ArrayedImage(object):
         annotations=[]
         L = len(xRough)
         for i in range(L):
-            circ=patches.Circle((xRough[i],yRough[i]), markerRadius, fc='b', alpha=0.5, )
+            circ=patches.Circle((xRough[i],yRough[i]), markerRadius, fc=markercolor, alpha=0.5, )
             circles.append(circ)
 
             txt=alphaRowString(self.spotLocations[i])
@@ -269,7 +269,7 @@ class ArrayedImage(object):
         self.yCenters=yFine
         print("new spot x and y locations have been saved.")
 
-    def roughPosition_with_dialogs(self):
+    def roughPosition_with_dialogs(self,colormap="gray",markercolor="blue"):
 
         global arrayed_analysis_columns #variable /has/ to be declared global if you want to use the %store magic
         global arrayed_analysis_rows
@@ -286,7 +286,7 @@ class ArrayedImage(object):
         %store arrayed_analysis_columns
         %store arrayed_analysis_rows
         %store arrayed_analysis_offset
-        self.roughPosition(arrayed_analysis_columns,arrayed_analysis_rows,colormap='jet_r',hexagonalOffset=arrayed_analysis_offset)
+        self.roughPosition(arrayed_analysis_columns,arrayed_analysis_rows,colormap=colormap,markercolor=markercolor,hexagonalOffset=arrayed_analysis_offset)
 
 
 

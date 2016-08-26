@@ -24,6 +24,13 @@ In addition to the base anaconda installation, you will need to install the pyth
 conda install future
 ```
 
+The widgets in this notebook require the widgetsnbextension package.  This can be installed via:
+
+```
+conda install widgetsnbextension
+jupyter nbextension enable --py --sys-prefix widgetsnbextension
+```
+
 OMAAT code can be obtained from the command line by:
 
 ```
