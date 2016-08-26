@@ -8,6 +8,7 @@ from builtins import range
 from builtins import object
 from builtins import input
 
+import os
 import numpy as np
 from scipy import interpolate
 import matplotlib.pyplot as plt
@@ -755,11 +756,12 @@ class OpenMSIsession(object):
         global arrayed_analysis_default_filename #variable /has/ to be declared global if you want to use the %store magic
         myFiles = self.getFilelist()
         myFiles.sort()
+        myFiles = [os.path.basename(f) for f in myFiles]
         arrayed_analysis_default_filename = myFiles[0]
         %store -r arrayed_analysis_default_filename
-        fileSelector=ipywidgets.Select(options=myFiles, width=800, height=400)
+        fileSelector=ipywidgets.Select(options=myFiles,  height=300,width=600)
         try:
-            fileSelector.value=arrayed_analysis_default_filename
+            fileSelector.value=os.path.basename(arrayed_analysis_default_filename)
         except KeyError:
             fileSelector.value=myFiles[0]
 
