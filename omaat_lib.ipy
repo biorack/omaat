@@ -630,8 +630,6 @@ class ArrayedImage(object):
                 curr_ana['spectraDF'] = None
                 print("Unknown format for spectraDF. Ignore")
                 print(self.spectra_df)
-        for i in curr_ana.data_names:
-           print((i, curr_ana[i]))
 
         self.spectra_df=None
         curr_ana.add_parameter(name='Nrows',
