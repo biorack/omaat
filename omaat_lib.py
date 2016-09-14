@@ -22,17 +22,16 @@ import sys
 import pandas as pd
 import datetime
 import time
+import pickle
+import inspect
 from future.utils import with_metaclass
-
 
 try:
     import ipywidgets
 except ImportError:
     import IPython.html.widgets as ipywidgets
 
-
 class MassRangeReductionStrategy(with_metaclass(abc.ABCMeta, object)):
-
     @abc.abstractmethod
     def reduceImage(self,data):
         pass
@@ -47,13 +46,11 @@ class MassRangeReductionStrategy(with_metaclass(abc.ABCMeta, object)):
     def supportsRemoteReduce(self):
         return self.remoteReduceOperation() is not None
 
-
 class PeakArea(MassRangeReductionStrategy):
     def reduceImage(self,data):
         return np.sum(data,2)
     def remoteReduceOperation(self, **kwargs):
         return '[{"min_dim": 2, "reduction": "sum", "axis": -1}]'
-
 
 class PeakHeight(MassRangeReductionStrategy):
     def reduceImage(self,data):
@@ -111,7 +108,8 @@ class ArrayedImage(object):
         self.Nrows=None
         self.Ncolumns=None
         self.spectra_df=None
-
+        self.rough_position_draw_points = None
+        self.fine_position_draw_points = None
 
     def __str__(self):
         spotstr=""
@@ -131,6 +129,41 @@ class ArrayedImage(object):
                 "\n# of spot locations defined: "+spotstr+\
                 "\n# of spot pixel masks defined: "+spotListstr
 
+    def get_xy_centers(self):
+        '''
+        A generalized approach to setting the x and y centers:
+        
+        Start off by checking if xCenters is none.  if yes, then get it from handles
+        if no, then you are all set.
+     
+        if fine positioning has been done, than the centers are extracted from 
+        the graphics handles of the drawing objects for fine positioning
+        
+        if fine positioning has not been done, but rough positioning has
+        then the x and y centers are taken from the rough positioning handles to the 
+        interior points.  these are stored redundantly for each handle object.
+
+        if neither rough or fine positioning has been done and xCenters does not
+        exist than raise error
+
+        '''
+        if self.xCenters is not None:
+            # if x and y centers exist then they should be used as is
+            # functions that do not directly specify x and y centers
+            # should set x and y centers to default values.
+            return
+        elif self.fine_position_draw_points is not None:
+            self.xCenters = [c.point.center[0] for c in self.fine_position_draw_points]
+            self.yCenters = [c.point.center[1] for c in self.fine_position_draw_points]
+            return     
+        elif self.rough_position_draw_points is not None:
+            self.xCenters = self.rough_position_draw_points[0].h1.get_xdata()
+            self.yCenters = self.rough_position_draw_points[0].h1.get_ydata()
+            return
+        else:
+            raise ValueError("There are no defined spots")
+
+
     def roughPosition(self,Nx,Ny,dragRadius=4,pointMarkerSize=12,hexagonalOffset=0,colormap='gray',markercolor='blue'):
         """
         Use a GUI to define a trapezoidal grid of spot centers
@@ -143,17 +176,27 @@ class ArrayedImage(object):
         :param colormap: the color map used for the base image. default is 'gray'
         :return: no return value
         """
+
+        #set the x and y centers and fine tuned position markers to null values:
+        self.xCenters=None
+        self.yCenters=None
+        #set the fine position to default
+        self.fine_position_draw_points = None
+
+        # define the row column indices in the arrayedanalysis object
+        self.spotLocations=[(row+1,column+1) for row in range(Ny) for column in range(Nx)]
+        self.Ncolumns=Nx
+        self.Nrows=Ny
+
         bkImage=self.baseImage
-        fig = plt.figure()
+        fig = plt.figure(num = 'Trapezoidial Interpolation Spot Adjustment')
         fig.set_facecolor('white')
         ax = fig.add_subplot(111)
         plt.imshow(bkImage,colormap)
 
-    #     ax.set_xlim(2,7)
-    #     ax.set_ylim(0,3)
+        ax.set_xlim(0-dragRadius,bkImage.shape[1]+dragRadius)
+        ax.set_ylim(bkImage.shape[0]+dragRadius,0-dragRadius)
         ax.set_aspect('equal')
-    #    xPos = [0,bkImage.shape[1]]
-    #    xPos = [0,bkImage.shape[0]]
 
         circles = []
         circles.append(patches.Circle((0,0), dragRadius, fc=markercolor, alpha=0.5, ))
@@ -161,50 +204,31 @@ class ArrayedImage(object):
         circles.append(patches.Circle((bkImage.shape[1],0), dragRadius, fc=markercolor, alpha=0.5, ))
         circles.append(patches.Circle((bkImage.shape[1],bkImage.shape[0]), dragRadius, fc=markercolor, alpha=0.5, ))
 
-
         rowAlpha=chr(ord('A')+Ny-1)
-        annontations = [plt.annotate("A1",(0,0),color="white",horizontalalignment='center', verticalalignment='center'),
+        annotations = [plt.annotate("A1",(0,0),color="white",horizontalalignment='center', verticalalignment='center'),
                         plt.annotate("".join([rowAlpha,"1"]),(0,bkImage.shape[0]),color="white",horizontalalignment='center', verticalalignment='center'),
                         plt.annotate("".join(["A",str(Nx)]),(bkImage.shape[1],0),color="white",horizontalalignment='center', verticalalignment='center'),
                         plt.annotate("".join([rowAlpha,str(Nx)]),(bkImage.shape[1],bkImage.shape[0]),color="white",horizontalalignment='center', verticalalignment='center')]
-
-
-    #     for i in range(2):
-    #         for j in range(2):
-    #             circles.append(patches.Circle((3*(i+1),j+1), 0.14, fc='r', alpha=0.5, ))
-
 
         p = []
         for d in circles:
             p.append(d.center)
         p = np.asarray(p)
-        xi,yi = barycentric_trapezoidial_interpolation(Nx,Ny,p,hexagonalOffset=hexagonalOffset)
+        xi, yi = barycentric_trapezoidial_interpolation(Nx,Ny,p,hexagonalOffset=hexagonalOffset)
 
-        h1, = ax.plot(xi,yi,'.',markersize=pointMarkerSize,color=markercolor)
+        h1, = ax.plot(xi, yi, '.', markersize = pointMarkerSize, color = markercolor)
 
         drs = []
-        for c,circ in enumerate(circles):
+        for c, circ in enumerate(circles):
             ax.add_patch(circ)
-            dr = DraggablePointForBarycentricInterpolation(circ,h1,ax, Nx, Ny,annontations[c],hexagonalOffset)
+            dr = DraggablePointForBarycentricInterpolation(circ,h1,ax, Nx, Ny,annotations[c],hexagonalOffset)
             dr.connect()
             drs.append(dr)
 
 
-        putWindowOnTop()
-
         plt.show()
 
-        self.xCenters=h1.get_xdata()
-        self.yCenters=h1.get_ydata()
-        self.spotLocations=[(row+1,column+1) for row in range(Ny) for column in range(Nx)]
-        self.Ncolumns=Nx
-        self.Nrows=Ny
-
-        print("new spot x and y locations have been saved.")
-
-
-
-
+        self.rough_position_draw_points = drs
 
     def fineTunePosition(self,markerRadius=3,colormap='gray',markercolor="blue",spotLabelsAlwaysOn=False):
         """
@@ -216,25 +240,21 @@ class ArrayedImage(object):
         :param spotLabelsAlwaysOn: show Row/Column lables on the spots all the time?
         :return: no return value.
         """
-        if self.xCenters is None:
-            raise ValueError("There are no defined spots")
-        fig = plt.figure()
+
+        
+        #xCenters and yCenters are required here and elsewhere.
+        self.get_xy_centers()
+        xRough=self.xCenters
+        yRough=self.yCenters
+        # now that x and y centers have been initalized, reset x and y centers
+        self.xCenters=None
+        self.yCenters=None
+
+        fig = plt.figure(num = 'Fine Tune Spot Adjustment')
         fig.set_facecolor('white')
         ax = fig.add_subplot(111)
         plt.imshow(self.baseImage,cmap=colormap)
-    #     ax.set_xlim(np.min(xRough)-1,np.max(xRough)+1)
-    #     ax.set_ylim(np.min(yRough)-1,np.max(yRough)+1)
-        # print max(yRough)
-        # print np.max(yRough)
-        # ax.set_xlim(min(xRough)-10,max(xRough)+10)
-        # ax.set_ylim(min(yRough)+10,max(yRough)+10)
         ax.set_aspect('equal')
-        # circles = [patches.Circle((0.32, 0.3), 0.03, fc='r', alpha=0.5),
-        #                patches.Circle((0.3,0.3), 0.03, fc='g', alpha=0.5)]
-
-        xRough=self.xCenters
-        yRough=self.yCenters
-
 
         drs = []
         circles = []
@@ -245,7 +265,7 @@ class ArrayedImage(object):
             circles.append(circ)
 
             txt=alphaRowString(self.spotLocations[i])
-            a=plt.annotate(txt,(self.xCenters[i],self.yCenters[i]),color="white",horizontalalignment='center', verticalalignment='center'   )
+            a=plt.annotate(txt,(xRough[i],yRough[i]),color="white",horizontalalignment='center', verticalalignment='center'   )
             a.set_animated(False)
             if not spotLabelsAlwaysOn:
                 a.set_visible(False)
@@ -256,36 +276,27 @@ class ArrayedImage(object):
             dr.connect()
             drs.append(dr)
 
-        putWindowOnTop()
-
         plt.show()
-        xFine = []
-        yFine = []
-        for c in circles:
-            xFine.append(c.center[0])
-            yFine.append(c.center[1])
 
-        self.xCenters=xFine
-        self.yCenters=yFine
-        print("new spot x and y locations have been saved.")
+        self.fine_position_draw_points = drs
 
     def roughPosition_with_dialogs(self,colormap="gray",markercolor="blue"):
+        params = get_default_params()
 
-        global arrayed_analysis_columns #variable /has/ to be declared global if you want to use the %store magic
-        global arrayed_analysis_rows
-        global arrayed_analysis_offset
-        arrayed_analysis_columns = 12
-        arrayed_analysis_rows = 8
-        arrayed_analysis_offset = 0
-        %store -r arrayed_analysis_columns
-        %store -r arrayed_analysis_rows
-        %store -r arrayed_analysis_offset
+        arrayed_analysis_columns = params['arrayed_analysis_columns']
+        arrayed_analysis_rows = params['arrayed_analysis_rows']
+        arrayed_analysis_offset = params['arrayed_analysis_offset']
+ 
         arrayed_analysis_columns = int(input("Number of columns? leave blank for default (\"{:d}\") ".format(arrayed_analysis_columns)) or arrayed_analysis_columns)
         arrayed_analysis_rows = int(input("Number of rows? leave blank for default (\"{:d}\") ".format(arrayed_analysis_rows)) or arrayed_analysis_rows)
         arrayed_analysis_offset = float(input("Hexagonal Offset? This shifts every other line by this many spots. leave blank for default (\"{:f}\") ".format(arrayed_analysis_offset)) or arrayed_analysis_offset)
-        %store arrayed_analysis_columns
-        %store arrayed_analysis_rows
-        %store arrayed_analysis_offset
+ 
+        params['arrayed_analysis_columns'] = arrayed_analysis_columns
+        params['arrayed_analysis_rows'] = arrayed_analysis_rows
+        params['arrayed_analysis_offset'] = arrayed_analysis_offset  
+
+        update_default_params(params)
+
         self.roughPosition(arrayed_analysis_columns,arrayed_analysis_rows,colormap=colormap,markercolor=markercolor,hexagonalOffset=arrayed_analysis_offset)
 
 
@@ -345,8 +356,8 @@ class ArrayedImage(object):
         :return: no return value
         """
         
-        if self.xCenters is None:
-            raise ValueError("You can't run the optimizer because there are no defined spots")
+        #xCenters and yCenters are required here and elsewhere. 
+        self.get_xy_centers() #They must be calculated from either the rough or fine position handles
 
         if not overlapDistance_squared:
             overlapDistance_squared=(integrationRadius*2.0)**2
@@ -432,15 +443,14 @@ class ArrayedImage(object):
 
 
     def optimizeSpots_with_dialogs(self):
-        if self.xCenters is None:
-            print("You can't run the optimizer before you have defined a grid of spots!")
-            return
-        global arrayed_analysis_radius #variable /has/ to be declared global if you want to use the %store magic
-        global arrayed_analysis_minScore
-        arrayed_analysis_radius = 2
-        arrayed_analysis_minScore = 0
-        %store -r arrayed_analysis_radius
-        %store -r arrayed_analysis_minScore
+        #xCenters and yCenters are required here and elsewhere. 
+        self.get_xy_centers() #They must be calculated from either the rough or fine position handles
+        
+        params = get_default_params()
+
+        arrayed_analysis_radius = params['arrayed_analysis_radius']
+        arrayed_analysis_minScore = params['arrayed_analysis_minScore']
+
         linebreak=ipywidgets.HTML("<br>")
         displayBox=ipywidgets.VBox()
         integrationRadiusBox=ipywidgets.BoundedFloatText(value=arrayed_analysis_radius)
@@ -458,7 +468,6 @@ class ArrayedImage(object):
             ionWeightBoxes.append(newbox)
             displayBox.children+=(ipywidgets.HBox(children=(ipywidgets.HTML("Weighting for ion '{:f}'".format(i)),newbox)),)
 
-
         calcButton=ipywidgets.Button(description="Calculate scores for current spot locations")
         calcResults=ipywidgets.HTML()
         displayBox.children+=(linebreak,calcButton,calcResults,linebreak)
@@ -466,7 +475,6 @@ class ArrayedImage(object):
         minScoreBox=ipywidgets.BoundedFloatText(value=arrayed_analysis_minScore,max=1000000)
         displayBox.children+=(ipywidgets.HBox(children=(ipywidgets.HTML("Minimum score necessary to move spot."),minScoreBox,)),
                              ipywidgets.HTML("(if every location on your grid is occupied by a spot, you safely can leave the minimum score at 0. Setting a minimum score will prevent spot locations from converging on artifacts if there is no real spot there)<br>"))
-
 
         optimizeButton=ipywidgets.Button(description="Optimize Spots!")
 
@@ -492,12 +500,14 @@ class ArrayedImage(object):
                 len(results),min(results),max(results),np.mean(results),np.median(results))
 
         def do_optimize(widget):
-            global arrayed_analysis_radius
-            global arrayed_analysis_minScore
             arrayed_analysis_radius=integrationRadiusBox.value
             arrayed_analysis_minScore=minScoreBox.value
-            %store arrayed_analysis_radius
-            %store arrayed_analysis_minScore
+            
+            params['arrayed_analysis_radius'] = arrayed_analysis_radius
+            params['arrayed_analysis_minScore'] = arrayed_analysis_minScore
+            
+            update_default_params(params)
+
             ionweights=[]
             for box in ionWeightBoxes:
                 ionweights.append(box.value)
@@ -514,22 +524,37 @@ class ArrayedImage(object):
         optimizeButton.on_click(do_optimize)
 
 
-    def generateSpotList(self,integrationRadius=2):
+    def generateSpotList(self, integrationRadius = None):
+        '''
+        :param integrationRadius is used by one spot mask to select pixels that are less than this distance from the x,y center
+        of each spot.
+        '''
 
-        if self.xCenters is None:
-            raise ValueError("There are no defined spots")
+        #xCenters and yCenters are required here and elsewhere. 
+        self.get_xy_centers() #They must be calculated from either the rough or fine position handles
+
+        params = get_default_params()
+        #Answer two questions:
+        #1) use  value from kwargs or stored value?
+        #2) update stored value?
+        if not integrationRadius:
+            integrationRadius == params['arrayed_analysis_radius']
+        elif integrationRadius != params['arrayed_analysis_radius']:
+            params['arrayed_analysis_radius'] = integrationRadius
+            update_default_params(params)
+
         xEdges, yEdges = np.meshgrid(list(range(self.imStack.shape[1])), list(range(self.imStack.shape[0])), sparse=False, indexing='xy')
 
         myPixels = []
-        tallies={}
-        for x,y in zip(self.xCenters,self.yCenters):
-            idx = oneSpotMask(xEdges,yEdges,x,y,integrationRadius)
+        tallies = {}
+        for x, y in zip(self.xCenters, self.yCenters):
+            idx = oneSpotMask(xEdges, yEdges, x, y, integrationRadius)
             myPixels.append(idx)
             if len(idx) not in tallies:
-                tallies[len(idx)]=0
-            tallies[len(idx)]+=1
-        self.spotList=myPixels
-        print("{:d} spots generated. number of spots with N pixels:{}".format(len(myPixels),tallies))
+                tallies[len(idx)] = 0
+            tallies[len(idx)] += 1
+        self.spotList = myPixels
+        print("{:d} spots generated. number of spots with N pixels:{}".format(len(myPixels), tallies))
         return myPixels
 
     def generateMaskedImage(self,spotList=None):
@@ -542,19 +567,19 @@ class ArrayedImage(object):
                             The default is the last-calculated spotlist for this image.
         :return: An image that can be viewed using matplotlib's imshow()
         """
-        _spotList=spotList
+        _spotList = spotList
 
         if not spotList:
             if not self.spotList:
                 raise ValueError("Need to either pass a spot list in the method argument,"+
                                  "or have generated a spotList using generateSpotList at some point")
-            _spotList=self.spotList
+            _spotList = self.spotList
 
         mask = np.zeros(self.baseImage.shape)
 
         for spot in _spotList:
             for i in spot:
-                mask[i[0],i[1]] = 1
+                mask[i[0], i[1]] = 1
         return mask
 
 
@@ -567,13 +592,13 @@ class ArrayedImage(object):
         """
 
         if spotList is None:
-            global arrayed_analysis_radius
-            %store -r arrayed_analysis_radius
+            #global arrayed_analysis_radius
+            #%store -r arrayed_analysis_radius
             spots=self.generateSpotList(integrationRadius=arrayed_analysis_radius)
 
 
         maskedimg=self.generateMaskedImage(spotList=spotList)
-
+        plt.figure(num = 'Masked Image')
         plt.imshow(maskedimg)
         #ap={"linewidth":0, "facecolor":"g", "width":2,"headwidth":2}#,"frac":0}#, "headlength":0}
         #ap={"arrowstyle":"->, head_width=.3", "facecolor":"g","edgecolor":"g","linewidth":2}
@@ -583,7 +608,6 @@ class ArrayedImage(object):
         for i in range(len(self.xCenters)):
             txt=alphaRowString(self.spotLocations[i]) if alphaRows else str(self.spotLocations[i])
             plt.annotate(txt,(self.xCenters[i],self.yCenters[i]),xytext=(self.xCenters[i]-xshift,self.yCenters[i]-yshift),color="g",horizontalalignment='right', verticalalignment='bottom',arrowprops=ap)
-        putWindowOnTop()
         plt.show()
 
 
@@ -726,15 +750,12 @@ class OpenMSIsession(object):
     """
     This object represents an OpenMSI session.
     """
-
-
     def __init__(self,username=""):
         """you won't want to call the constructor, use the 'login' function
         to create an OpenMSIsession object"""
         self.requests_session = requests.Session()
         self.username=username
         self.filename=None
-
 
     def getFilelist(self):
         payload = {'format':'JSON','mtype':'filelistView'}
@@ -744,43 +765,38 @@ class OpenMSIsession(object):
         fileList = json.loads(r.content.decode('utf-8'))
         return list(fileList.keys())
 
-
-
-
     def fileSelector(self):
         """
-
         :return: An ipython widget containing a file selector. If you simply have this method as the last
                     line of a notebook cell, you'll see it. otherwise you need to do IPython.display.display(fileSelector())
         """
-        global arrayed_analysis_default_filename #variable /has/ to be declared global if you want to use the %store magic
+        params = get_default_params()
+        arrayed_analysis_default_filename = params['arrayed_analysis_default_filename']
         myFiles = self.getFilelist()
         myFiles.sort()
-        myFiles = [os.path.basename(f) for f in myFiles]
-        arrayed_analysis_default_filename = myFiles[0]
-        %store -r arrayed_analysis_default_filename
+        myFiles = [os.path.join(os.path.basename(os.path.dirname(p)),os.path.basename(p)) for p in myFiles]
+
         fileSelector=ipywidgets.Select(options=myFiles,  height=300,width=600)
-        try:
-            fileSelector.value=os.path.basename(arrayed_analysis_default_filename)
-        except KeyError:
+        if arrayed_analysis_default_filename in myFiles:
+            fileSelector.value = arrayed_analysis_default_filename
+        else:
             fileSelector.value=myFiles[0]
 
         title=ipywidgets.HTML(value="Pick the file you want to load here") #IPN2: HTMLWidget
         #IPython.display.display(title)
         #IPython.display.display(fileSelector)
         def _fileSelector_updated(widget=None):
-            global arrayed_analysis_default_filename
             if(self.filename!=fileSelector.value):
                 self.filename=fileSelector.value
                 arrayed_analysis_default_filename = self.filename
-                %store arrayed_analysis_default_filename
+                params['arrayed_analysis_default_filename'] = arrayed_analysis_default_filename
+                update_default_params(params)
         try:
             fileSelector.observe(_fileSelector_updated)
         except AttributeError:
             fileSelector.on_trait_change(_fileSelector_updated)
         _fileSelector_updated()
         return ipywidgets.Box(children=(title,fileSelector))
-
 
     def getArrayedImage(self,ions,massRange,massRangePercent=False,filename=None,massRangeReductionStrategy=None,expIndex=0,dataIndex=0,verbose=True,remoteReduce=True):
         """
@@ -811,10 +827,18 @@ class OpenMSIsession(object):
         """
         if massRangeReductionStrategy is None:
             massRangeReductionStrategy = PeakArea()
+
+        #add path prefix to account for narrow file selector box in recent ipython widgets upgrade
+        #2016-09-12
+        #remove this once widget select box is wide enough to show full path
         if filename:
             self.filename=filename
         elif not self.filename:
             raise ValueError("Either the filename needs to be set in the arguments, or a file must have been selected in the file selector.")
+        if self.filename.startswith('omsi_data'):
+            self.filename = os.path.join('/data/openmsi/',self.filename)
+        else:
+            self.filename = os.path.join('/project/projectdirs/openmsi/omsi_data_private/',self.filename)
 
         payload = {'file':self.filename,'format':'JSON','mtype':'file','expIndex':expIndex,'dataIndex':dataIndex}
         url = 'https://openmsi.nersc.gov/openmsi/qmetadata'
@@ -865,14 +889,15 @@ class OpenMSIsession(object):
         return newImage
 
     def imageLoader_with_dialogs(self):
+        params = get_default_params()
 
         expIndex=ipywidgets.BoundedIntText(value=0)
         expIndexBox=ipywidgets.HBox(children=(ipywidgets.HTML("Set the Experiment Index you want to load:"),expIndex))
         dataIndex=ipywidgets.BoundedIntText(value=0)
         dataIndexBox=ipywidgets.HBox(children=(ipywidgets.HTML("Set the Data Index you want to load:"),dataIndex))
-        global openmsi_default_ions
-        openmsi_default_ions = []
-        %store -r openmsi_default_ions
+
+        openmsi_default_ions = params['openmsi_default_ions']
+
         ionSet=set(openmsi_default_ions)
         ionList=ipywidgets.Select(options=[str(x) for x in sorted(ionSet)])
         addIonBox=ipywidgets.BoundedFloatText(description="Add an ion:",max=10000)
@@ -885,17 +910,17 @@ class OpenMSIsession(object):
             ionSet.update({addIonBox.value})
             ionList.options=[]
             ionList.options=[str(x) for x in sorted(ionSet)]
-            global openmsi_default_ions
             openmsi_default_ions = sorted(ionSet)
-            %store openmsi_default_ions
+            params['openmsi_default_ions'] = openmsi_default_ions
+            update_default_params(params)
 
         def removeion(widget):
             ionSet.difference_update({float(ionList.value)})
             ionList.options=[]
             ionList.options=[str(x) for x in sorted(ionSet)]
-            global openmsi_default_ions
             openmsi_default_ions = sorted(ionSet)
-            %store openmsi_default_ions
+            params['openmsi_default_ions'] = openmsi_default_ions
+            update_default_params(params)
 
         addIonButton.on_click(addion)
         removeIonButton.on_click(removeion)
@@ -923,7 +948,6 @@ class OpenMSIsession(object):
         IPython.display.display(ipywidgets.VBox(children=(fileSelector,linebreak,expIndexBox,dataIndexBox,linebreak,ionSelectionBox,linebreak,rangeBox,linebreak,reductionBox,linebreak,OKbutton)))
 
         def do_load(widget):
-            global img
             print("Loading image...")
             reductionStrategy = None
             if reductionCheckBox == "Sum of all data points in mass range (i.e., area under the curve)":
@@ -934,8 +958,8 @@ class OpenMSIsession(object):
                 reductionStrategy=AreaNearPeak(halfpeakwidth=Ndatapoints.value)
             else:
                 raise AssertionError("this error should not be happening...")
-            img=self.getArrayedImage(openmsi_default_ions,massRange=rangeNumber.value,massRangePercent=(rangeCheckBox.value=="% of m/z"),expIndex=expIndex.value,dataIndex=dataIndex.value,massRangeReductionStrategy=reductionStrategy,verbose=True)
-            print("Image has been saved in the global 'img' variable.")
+            img=self.getArrayedImage(openmsi_default_ions, massRange=rangeNumber.value,massRangePercent=(rangeCheckBox.value=="% of m/z"),expIndex=expIndex.value,dataIndex=dataIndex.value,massRangeReductionStrategy=reductionStrategy,verbose=True)
+            self.img = img
 
         OKbutton.on_click(do_load)
 
@@ -1004,9 +1028,7 @@ class OpenMSIsession(object):
             dataframe.iloc[:,i]=data[u'spectrum']
             if(verbose):
                 print("Finished loading spectrum {:d} out of {:d}".format(i+1,len(_spotList)))
-            #dataframe[i]=
-            #df['coords'].append(coords)
-            #df['spectra'].append(data)
+
         return dataframe
 
 
@@ -1015,15 +1037,14 @@ def login(username=""):
     Args:
         username: If the username is left blank, the function will ask for a username
     """
-    global arrayed_analysis_default_username #variable /has/ to be declared global if you want to use the %store magic
-    arrayed_analysis_default_username = ""
     if username:
         arrayed_analysis_default_username=username
     else:
-        %store -r arrayed_analysis_default_username
+        params = get_default_params()
+        arrayed_analysis_default_username = params['arrayed_analysis_default_username']
         arrayed_analysis_default_username = input("NERSC username? leave blank for default (\"" + arrayed_analysis_default_username + "\") ") or arrayed_analysis_default_username
-
-        %store arrayed_analysis_default_username
+        params['arrayed_analysis_default_username'] = arrayed_analysis_default_username
+        update_default_params(params)
 
     password = getpass.getpass(prompt="Enter password for user \"" + arrayed_analysis_default_username + "\"")
 
@@ -1046,24 +1067,6 @@ def login(username=""):
         print("Not sure if login was successful, try continuing and see what happens")
     sys.stdout.flush()
     return newOpenMSIsession
-
-def putWindowOnTop():
-        #this puts the matplotlib window in front
-    itDidntWork=False
-    plt.draw()
-    try:
-        plt.get_current_fig_manager().window.raise_()
-    except:
-        itDidntWork=True
-    if itDidntWork:
-        try:
-            plt.get_current_fig_manager().window.attributes('-topmost',1)
-        except:
-            itDidntWork=True
-
-    if itDidntWork:
-        print("The window should be open now. If you can't see it, check to see if it's behind another window")
-
 
 def getMZ(client,filename,expIndex,dataIndex):
     payload = {'file':filename,
@@ -1163,8 +1166,19 @@ class DraggablePoint(object):
         dy = event.ydata - ypress
         self.point.center = (self.point.center[0]+dx, self.point.center[1]+dy)
         self.annotation.set_position(self.point.center)
-        self.point.set_facecolor('c')
-        self.point.figure.canvas.draw()
+        #self.point.set_facecolor('c')
+        canvas = self.point.figure.canvas
+        axes = self.point.axes
+        
+        # restore the background region
+        canvas.restore_region(self.background)
+
+        # redraw just the current rectangle
+        axes.draw_artist(self.point)
+#         axes.set_title(str(self.point.center))
+        # blit just the redrawn area
+        canvas.blit(axes.bbox)
+        #self.point.figure.canvas.draw()
 
     def disconnect(self):
         """disconnect all the stored connection ids"""
@@ -1191,7 +1205,6 @@ class DraggablePointForBarycentricInterpolation(object):
         self.annotation=annotation
         self.hexagonalOffset = hexagonalOffset
 
-
     def connect(self):
         """connect to all the events we need"""
         self.cidpress = self.point.figure.canvas.mpl_connect('button_press_event', self.on_press)
@@ -1199,44 +1212,73 @@ class DraggablePointForBarycentricInterpolation(object):
         self.cidmotion = self.point.figure.canvas.mpl_connect('motion_notify_event', self.on_motion)
 
     def on_press(self,event):
-        if event.inaxes != self.point.axes:
-            return
-        contains = self.point.contains(event)[0]
+        if event.inaxes != self.point.axes: return
+        if DraggablePointForBarycentricInterpolation.lock is not None: return
+        contains, attrd = self.point.contains(event)
         if not contains: return
-        self.press = self.point.center, event.xdata, event.ydata
+        self.press = (self.point.center), event.xdata, event.ydata
+        DraggablePointForBarycentricInterpolation.lock = self
 
-    def on_release(self, event):
-        'on release we reset the press data'
-        self.press = None
-        lock = None
-        if DraggablePointForBarycentricInterpolation.lock is not self:
-            return
-        # turn off the rect animation property and reset the background
-        self.point.set_animated(False)
-        self.annotation.set_animated(False)
-        self.background = None
-        # redraw the full figure
-        self.point.figure.canvas.draw()
+        # draw everything but the selected rectangle and store the pixel buffer
+        canvas = self.point.figure.canvas
+        axes = self.point.axes
+        self.point.set_animated(True)
+        canvas.draw()
+        self.background = canvas.copy_from_bbox(self.point.axes.bbox)
+
+        # now redraw just the rectangle
+        axes.draw_artist(self.point)
+
+        # and blit just the redrawn area
+        canvas.blit(axes.bbox)
+
 
     def on_motion(self, event):
-        if self.press is None: return
+        if DraggablePointForBarycentricInterpolation.lock is not self:
+            return
         if event.inaxes != self.point.axes: return
         self.point.center, xpress, ypress = self.press
         dx = event.xdata - xpress
         dy = event.ydata - ypress
         self.point.center = (self.point.center[0]+dx, self.point.center[1]+dy)
         self.annotation.set_position(self.point.center)
-#         print self.ax.patches[0]
+        
+        canvas = self.point.figure.canvas
+        axes = self.point.axes
+        
+        # restore the background region
+        canvas.restore_region(self.background)
+
+        # redraw just the current rectangle
+        axes.draw_artist(self.point)
+        # blit just the redrawn area
+        canvas.blit(axes.bbox)
+        
         p = []
         for d in self.ax.patches:
             p.append(d.center)
         p = np.asarray(p)
-
+        
         xi,yi = barycentric_trapezoidial_interpolation(self.Nx,self.Ny,p,hexagonalOffset = self.hexagonalOffset)
 
         self.h1.set_xdata(xi)
         self.h1.set_ydata(yi)
 
+        #self.point.figure.canvas.draw()
+        
+    def on_release(self, event):
+        'on release we reset the press data'
+        if DraggablePointForBarycentricInterpolation.lock is not self:
+            return
+
+        self.press = None
+        DraggablePointForBarycentricInterpolation.lock = None
+
+        # turn off the rect animation property and reset the background
+        self.point.set_animated(False)
+        self.background = None
+
+        # redraw the full figure
         self.point.figure.canvas.draw()
 
     def disconnect(self):
@@ -1247,42 +1289,41 @@ class DraggablePointForBarycentricInterpolation(object):
 
 
 def barycentric_trapezoidial_interpolation(Nx,Ny,p,hexagonalOffset=0.5):
-    # define our function to calculate the position of points from Nx columns and Ny rows.
-    # The vertices are defined by p which is a size(4,2) array.
-    # each row of p are the coordinates or the vertices of our trapezoid
-    # the vertices have to be given in a specific order:
-    # [[1 1]
-    #  [1 2]
-    #  [2 1]
-    #  [2 2]]
-    # an example plot using the barycentric interpolation to regrid data
-# define number of rows and number of columns and the vertices, then make some plots
+    '''
+    define our function to calculate the position of points from Nx columns and Ny rows.
+    The vertices are defined by p which is a size(4,2) array.
+    each row of p are the coordinates or the vertices of our trapezoid
+    the vertices have to be given in a specific order:
+    [[1 1]
+     [1 2]
+     [2 1]
+     [2 2]]
+    an example plot using the barycentric interpolation to regrid data
+    define number of rows and number of columns and the vertices, then make some plots
 
-    # Example:
-    # Nx = 20
-    # Ny = 15
+    Example:
+    Nx = 20
+    Ny = 15
 
-    # coords = [[0,0],[0,1],[1,0],[1,1]] #these are the [x,y] coords of your 4 draggable corners
-    # coords = np.asarray(coords)
+    coords = [[0,0],[0,1],[1,0],[1,1]] #these are the [x,y] coords of your 4 draggable corners
+    coords = np.asarray(coords)
 
-    # f, ax = plt.subplots(2, 2) # sharey=True, sharex=True)
-    # for i,a in enumerate(ax.flatten()):
-    #     newCoords = coords[:]
-    #     if i > 0:
-    #         newCoords = newCoords + np.random.rand(4,2) / 5
-    #     xi,yi = openmsi.barycentric_trapezoidial_interpolation(Nx,Ny,newCoords)
-    #     a.plot(xi,yi,'.',markersize=12)
-    # plt.show()
-        
+    f, ax = plt.subplots(2, 2) # sharey=True, sharex=True)
+    for i,a in enumerate(ax.flatten()):
+        newCoords = coords[:]
+        if i > 0:
+            newCoords = newCoords + np.random.rand(4,2) / 5
+        xi,yi = barycentric_trapezoidial_interpolation(Nx,Ny,newCoords)
+        a.plot(xi,yi,'.',markersize=12)
+    plt.show()
+    '''     
     x_basis = np.linspace(0,1,Nx)
     y_basis = np.linspace(0,1,Ny)
         
     px = [[p[0,0], p[2,0]],[p[1,0], p[3,0]]] #these are the [2,2] x-coordinates
-    py = [[p[0,1], p[2,1]],[p[1,1], p[3,1]]] #these are the [2,2] x-coordinates
-    #fx = interpolate.interp2d([1,0], [1,0], px, kind='linear')
+    py = [[p[0,1], p[2,1]],[p[1,1], p[3,1]]] #these are the [2,2] y-coordinates
     fx = interpolate.interp2d([0,1], [0,1], px, kind='linear')
     xi = fx(x_basis[:],y_basis[:]).flatten()
-    #fy = interpolate.interp2d([1,0], [1,0], py, kind='linear')
     fy = interpolate.interp2d([0,1], [0,1], py, kind='linear')
     yi = fy(x_basis[:],y_basis[:]).flatten()
     d1 = (p[2,0] - p[0,0]) / Nx / 2.0
@@ -1297,8 +1338,33 @@ def barycentric_trapezoidial_interpolation(Nx,Ny,p,hexagonalOffset=0.5):
 def alphaRowString(tuple):
     return "{}{:02d}".format(chr(ord('A')+tuple[0]-1),tuple[1])
 
+def init_default_params(arrayed_analysis_default_username = '', openmsi_default_ions = [979.4,1079.35,1141.35,1241.25],
+    arrayed_analysis_columns = 24, arrayed_analysis_rows = 16, arrayed_analysis_offset = 0,
+    arrayed_analysis_radius = 2, arrayed_analysis_minScore = 0, arrayed_analysis_default_filename = 'bpb/20120913_nimzyme.h5'):
+    '''
+    Creates a pickle file containing default settings used throughout the workflow
+    '''
+    a = inspect.getargspec(init_default_params)
+    kwargin = dict(zip(a.args,a.defaults))
+    with open('ommat_parameters.pkl','wb') as fid:
+        pickle.dump(kwargin,fid)
+    return kwargin
 
+def update_default_params(params):
+    '''
+    Saves the parameters file
+    '''
+    with open('ommat_parameters.pkl','wb') as fid:
+        pickle.dump(params,fid)
 
-print("Completed loading OpenMSI Arrayed Analysis Toolkit")
-
-#"⋈"
+def get_default_params():
+    '''
+    Reads parameters from the parameters file.  Creates a new parameters file if one does not exist.
+    '''
+    try:
+        with open('ommat_parameters.pkl','rb') as fid:
+            params = pickle.load(fid)
+    except:
+        print('initializing default parameters')
+        params = init_default_params()
+    return params
