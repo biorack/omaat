@@ -9,6 +9,7 @@ from builtins import object
 from builtins import input
 
 import os
+import posixpath as path
 import numpy as np
 from scipy import interpolate
 import matplotlib.pyplot as plt
@@ -774,7 +775,7 @@ class OpenMSIsession(object):
         arrayed_analysis_default_filename = params['arrayed_analysis_default_filename']
         myFiles = self.getFilelist()
         myFiles.sort()
-        myFiles = [os.path.join(os.path.basename(os.path.dirname(p)),os.path.basename(p)) for p in myFiles]
+        myFiles = [path.join(path.basename(path.dirname(p)),path.basename(p)) for p in myFiles]
 
         fileSelector=ipywidgets.Select(options=myFiles,  height=300,width=600)
         if arrayed_analysis_default_filename in myFiles:
@@ -836,9 +837,9 @@ class OpenMSIsession(object):
         elif not self.filename:
             raise ValueError("Either the filename needs to be set in the arguments, or a file must have been selected in the file selector.")
         if self.filename.startswith('omsi_data'):
-            self.filename = os.path.join('/data/openmsi/',self.filename)
+            self.filename = path.join('/data/openmsi/',self.filename)
         else:
-            self.filename = os.path.join('/project/projectdirs/openmsi/omsi_data_private/',self.filename)
+            self.filename = path.join('/project/projectdirs/openmsi/omsi_data_private/',self.filename)
 
         payload = {'file':self.filename,'format':'JSON','mtype':'file','expIndex':expIndex,'dataIndex':dataIndex}
         url = 'https://openmsi.nersc.gov/openmsi/qmetadata'
