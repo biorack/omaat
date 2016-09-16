@@ -381,7 +381,7 @@ class ArrayedImage(object):
             minscore=-1
             maxscore=-1
             for i in range(numberOfSpots):
-                    best=0
+                    best=-1
                     bestX=xCenter[i]
                     bestY=yCenter[i]
                     for newX in (list(range(-halfboxsize,halfboxsize+1))+xCenter[i]):
@@ -415,7 +415,7 @@ class ArrayedImage(object):
                         xCenter[i]=bestX
                         yCenter[i]=bestY
                     else:
-                        if raiseExceptions or best<=0: #if the score is <=0 something bad must be going on
+                        if raiseExceptions or best<0: #if the score is <=0 something bad must be going on
                             raise SpotOptimizationException()
                         elif(verbose):
                             print("Best score of spot # %d is %d but need > %d. Location stays as it was before."%(i,int(best), minimumScore))
