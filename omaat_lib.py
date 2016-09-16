@@ -8,7 +8,6 @@ from builtins import range
 from builtins import object
 from builtins import input
 
-import os
 import posixpath as path
 import numpy as np
 from scipy import interpolate
@@ -415,7 +414,7 @@ class ArrayedImage(object):
                         xCenter[i]=bestX
                         yCenter[i]=bestY
                     else:
-                        if raiseExceptions or best<0: #if the score is <=0 something bad must be going on
+                        if raiseExceptions or best<0: #if the score is <0 something bad must be going on
                             raise SpotOptimizationException()
                         elif(verbose):
                             print("Best score of spot # %d is %d but need > %d. Location stays as it was before."%(i,int(best), minimumScore))
@@ -595,7 +594,7 @@ class ArrayedImage(object):
         if spotList is None:
             #global arrayed_analysis_radius
             #%store -r arrayed_analysis_radius
-            spots=self.generateSpotList(integrationRadius=arrayed_analysis_radius)
+            spots=self.generateSpotList(integrationRadius=get_default_params()['arrayed_analysis_radius'])
 
 
         maskedimg=self.generateMaskedImage(spotList=spotList)
@@ -965,7 +964,7 @@ class OpenMSIsession(object):
         """
         Get an average mass spectrum for each of the spots in an image.
         :param img: An ArrayedImage. If it does not have spots defined yet, this function will call
-                    generateSpotList(integrationRadius=arrayed_analysis_radius) on the image first.
+                    generateSpotList(integrationRadius=get_default_params()['arrayed_analysis_radius']) on the image first.
         :param spotList: List of lists of pixels that defines the locations of the spots on the image
                             The default is the last-calculated spotlist for this image.
                             If you supply your own spot list, the column names will just be integers,
