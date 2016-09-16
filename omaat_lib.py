@@ -897,9 +897,8 @@ class OpenMSIsession(object):
         dataIndex=ipywidgets.BoundedIntText(value=0)
         dataIndexBox=ipywidgets.HBox(children=(ipywidgets.HTML("Set the Data Index you want to load:"),dataIndex))
 
-        openmsi_default_ions = params['openmsi_default_ions']
 
-        ionSet=set(openmsi_default_ions)
+        ionSet=set(params['openmsi_default_ions'])
         ionList=ipywidgets.Select(options=[str(x) for x in sorted(ionSet)])
         addIonBox=ipywidgets.BoundedFloatText(description="Add an ion:",max=10000)
         addIonButton=ipywidgets.Button(description="Add Ion",tooltip="Add the ion in the above box to the list of ions")
@@ -911,16 +910,14 @@ class OpenMSIsession(object):
             ionSet.update({addIonBox.value})
             ionList.options=[]
             ionList.options=[str(x) for x in sorted(ionSet)]
-            openmsi_default_ions = sorted(ionSet)
-            params['openmsi_default_ions'] = openmsi_default_ions
+            params['openmsi_default_ions'] = sorted(ionSet)
             update_default_params(params)
 
         def removeion(widget):
             ionSet.difference_update({float(ionList.value)})
             ionList.options=[]
             ionList.options=[str(x) for x in sorted(ionSet)]
-            openmsi_default_ions = sorted(ionSet)
-            params['openmsi_default_ions'] = openmsi_default_ions
+            params['openmsi_default_ions'] = sorted(ionSet)
             update_default_params(params)
 
         addIonButton.on_click(addion)
@@ -959,7 +956,7 @@ class OpenMSIsession(object):
                 reductionStrategy=AreaNearPeak(halfpeakwidth=Ndatapoints.value)
             else:
                 raise AssertionError("this error should not be happening...")
-            img=self.getArrayedImage(openmsi_default_ions, massRange=rangeNumber.value,massRangePercent=(rangeCheckBox.value=="% of m/z"),expIndex=expIndex.value,dataIndex=dataIndex.value,massRangeReductionStrategy=reductionStrategy,verbose=True)
+            img=self.getArrayedImage(params['openmsi_default_ions'], massRange=rangeNumber.value,massRangePercent=(rangeCheckBox.value=="% of m/z"),expIndex=expIndex.value,dataIndex=dataIndex.value,massRangeReductionStrategy=reductionStrategy,verbose=True)
             self.img = img
 
         OKbutton.on_click(do_load)
