@@ -110,7 +110,6 @@ class ArrayedImage(object):
         self.spotLocations=None
         self.Nrows=None
         self.Ncolumns=None
-        self.spectra_df=None
 
 
     def __str__(self):
@@ -586,18 +585,19 @@ class ArrayedImage(object):
         putWindowOnTop()
         plt.show()
 
-    def saveToOpenMSIFile(self, fileName=None):
+    def saveToOpenMSIFile(self, filename=None, spotSpectra=None):
         """
         Save the data from this ArrayedImage to and OpenMSI HDF5 file
-        :param fileName: Name of the output file
+        :param filename: Name of the output file
         :return: Instance of omsi.dataformat.omsi_file.main_file.omsi_file of the generated output OpenMSI file
         """
         from omsi.analysis.generic import analysis_generic
         from omsi.dataformat.omsi_file.main_file import omsi_file
         import h5py
+        import pickle
 
-        if fileName is None:
-            fileName = input("Output filename: ")
+        if filename is None:
+            filename = input("Output filename: ")
 
         dt = datetime.datetime.now()
         curr_ana = analysis_generic(name_key="openmsi_arrayed_analysis_results_{:d}-{:d}-{:d}_{:d}h{:d}.csv".format(dt.year,dt.month,dt.day,dt.hour,dt.minute))
@@ -609,7 +609,7 @@ class ArrayedImage(object):
         #                        help='The analysis function we want to execute',
         #                        dtype=str)
         #curr_ana['_analysis_function'] = cloudpickle.dumps(self)
-        curr_ana.data_names = ['spotLocations', 'xCenters', 'yCenters', 'baseImage', 'imStack', 'spectraDF']
+        curr_ana.data_names = ['spotLocations', 'xCenters', 'yCenters', 'baseImage', 'imStack', 'spectraDF', 'arrayedImageP', 'spotSpectraP', 'spotSpectra']
         curr_ana['spotLocations'] = self.spotLocations
         if isinstance(self.spotList, list):
             for spot_index, spot in enumerate(self.spotList):
@@ -620,18 +620,23 @@ class ArrayedImage(object):
         curr_ana['yCenters'] = self.yCenters
         curr_ana['baseImage'] = self.baseImage
         curr_ana['imStack'] = self.imStack
-        curr_ana['spectraDF'] = self.spectra_df
-        if curr_ana['spectraDF'] is not None:
-            try:
-                curr_ana['spectraDF'] = curr_ana['spectraDF'].as_matrix()
-            except:
-                curr_ana['spectraDF'] = np.asarray(curr_ana['spectraDF'])
-            if curr_ana['spectraDF'].dtype == np.dtype('O'):
-                curr_ana['spectraDF'] = None
-                print("Unknown format for spectraDF. Ignore")
-                print(self.spectra_df)
+        try:
+            curr_ana['spectraDF'] = self.spectra_df
+        except AttributeError:
+            curr_ana['spectraDF'] = None
+        curr_ana['arrayedImageP'] = pickle.dumps(self)
+        if curr_ana['spectraDF'] is None:
+            curr_ana['spectraDF'] = self.resultsDataFrame()
+        if spotSpectra is not None:
+            if isinstance(spotSpectra, pd.DataFrame):
+                curr_ana['spotSpectra'] = spotSpectra.as_matrix()
+                curr_ana['spotSpectraP'] = pickle.dumps(spotSpectra)
+            else:
+                curr_ana['spotSpectra'] = np.asarray(spotSpectra)
+                if curr_ana['spotSpectra'].dtype == np.dtype('O'):
+                    curr_ana.pop('spotSpectra')
+                    raise ValueError("Unsupported format for spotSpectra. Conversion to numpy resulted in type 'O'")
 
-        self.spectra_df=None
         curr_ana.add_parameter(name='Nrows',
                                help='Number of rows',
                                dtype=dtypes['int'],
@@ -666,58 +671,41 @@ class ArrayedImage(object):
                                required=True,
                                group=groups['input'],
                                data=self.originalSize)
+        curr_ana.add_parameter(name='filename',
+                               help='The name of the input file',
+                               dtype=dtypes['unicode'],
+                               required=True,
+                               group=groups['input'],
+                               data=self.filename)
+        curr_ana.add_parameter(name='expIndex',
+                               help='The index of the experiment in the input file',
+                               dtype=dtypes['int'],
+                               required=True,
+                               group=groups['input'],
+                               data=self.expIndex)
+        curr_ana.add_parameter(name='dataIndex',
+                               help='The index of the dataset in the input file',
+                               dtype=dtypes['int'],
+                               required=True,
+                               group=groups['input'],
+                               data=self.dataIndex)
 
-        outfile = omsi_file(h5py.File(fileName))
+        outfile = omsi_file(h5py.File(filename))
         exp = outfile.create_experiment(exp_identifier='OMAAT store')
         exp.create_analysis(curr_ana)
         outfile.flush()
         return outfile
 
-    def upload_to_openmsi(self, fileName=None, username=None, session=None, machine='cori'):
-        """
-        Upload the given file to the OpenMSI website. The file will be generate
-        using saveToOpenMSIFile if it does not exist
-        :param fileName: The name of the file to be uploaded (and generated)
-        :param username: NERSC username
-        :param session: The request NERSC session with NEWT
-        :param machine: The machine at NERSC to which the file should be uploaded. (default='cori')
-        :return:
-        """
-        from omsi.shared.omsi_web_helper import WebHelper
-
-        if fileName is None:
-            fileName = input("Output filename: ")
-
-        # Save this ArrayedImage to file if necessary
-        if not os.path.exists(fileName):
-            print("Saving Arrayed Image to file")
-            outfile = self.saveToOpenMSIFile(fileName=fileName)
-            outfile.close_file()
-        # Upload the file to nersc and register it with OpenMSIs
-        try:
-            print("Uploading file to NERSC and adding it to OpenMSI")
-            result, result2, added, temps = WebHelper.upload_file_to_nersc(filepath=fileName,
-                                                                           register=True,
-                                                                           session=session,
-                                                                           machine=machine)
-        except ValueError as e:
-            if e.message == "Authentication failed.":
-                print("Authentication failed. Please try again.")
-                return {}
-            else:
-                raise
-        print((result, result2, added, temps))
-
-    def writeResultTable(self,fileName="",spotList=None,minPixelIntensity=0,alphaRows=False):
+    def writeResultTable(self,filename="",spotList=None,minPixelIntensity=0,alphaRows=False):
         """
 
-        :param fileName: filename to write to. will automatically be appended with a .csv extension.
+        :param filename: filename to write to. will automatically be appended with a .csv extension.
                             Default is will use current date and time
         :return:
         """
 
-        if fileName:
-            actualFileName="{}.csv".format(fileName)
+        if filename:
+            actualFileName="{}.csv".format(filename)
         else:
             dt = datetime.datetime.now()
             actualFileName="openmsi_arrayed_analysis_results_{:d}-{:d}-{:d}_{:d}h{:d}.csv".format(dt.year,dt.month,dt.day,dt.hour,dt.minute)
@@ -864,8 +852,6 @@ class OpenMSIsession(object):
         r.raise_for_status()
         fileList = json.loads(r.content.decode('utf-8'))
         return list(fileList.keys())
-
-
 
 
     def fileSelector(self):
@@ -1074,7 +1060,7 @@ class OpenMSIsession(object):
                             If True, sets the column names of the data frame to strings with an alphabetical
                             identifier. alphaRows=False sets the column names to 2-tuples (row,column).
                             Default is True, ignored if spotList is defined.
-        :param verbose:     If Ture, ouput which spot's spectrum just finished the loading process
+        :param verbose:     If True, ouput which spot's spectrum just finished the loading process
         :return:     A dataframe with intensities at various m/z values.
                      Row indexes are m/z values and columns correspond to different spots
                      (Be aware this is different from how the resultsDataFrame is laid out!!)
@@ -1128,8 +1114,123 @@ class OpenMSIsession(object):
             #dataframe[i]=
             #df['coords'].append(coords)
             #df['spectra'].append(data)
+
         return dataframe
 
+    def restore_omaat_results(self, filename, expIndex=0, anaIndex=0, localFile=False):
+        """
+        Download the results from a previous OMAAT analysis and restore them
+
+        :param filename: Name of the data file
+        :param expIndex: The index of the experiment with the results
+        :param anaIndex: The index of the analysis with the omaat results
+        :param infile: The input HDF5 file if available. If not available than the function will
+                       download the data it needs from OpenMSI
+
+        :return: Tuple with:
+            * Instance of ArrayedImage with all results
+            * Pandas dataframe with the spot spectra if available (or None)
+
+        """
+        import h5py
+        import pickle
+        spotSpectra = None
+        arrayedImage = None
+        if filename is None:
+            filename = self.filename
+        if localFile:
+            infile = h5py.File(filename, 'r')
+            exp = infile['entry_'+str(expIndex)]
+            ana = exp['analysis_'+str(anaIndex)]
+
+            if 'spotSpectraP' in ana.keys():
+                spotSpectra = pickle.loads(ana['spotSpectraP'][()])
+            if 'arrayedImageP' in ana.keys():
+                arrayedImage = pickle.loads(ana['arrayedImageP'][()])
+        else:
+            payload = {'format': 'JSON',
+                       'file': filename,
+                       'expIndex':expIndex,
+                       'anaIndex': anaIndex,
+                       'anaDataName': 'spotSpectraP'}
+            url = 'https://openmsi.nersc.gov/openmsi/qcube'
+            r = self.requests_session.get(url, params=payload, stream=True)
+            r.raise_for_status()
+            data = np.asarray(json.loads(r.content.decode('utf-8')))
+            spotSpectra = pickle.loads(data[0])
+
+            payload['anaDataName'] = 'arrayedImageP'
+            r = self.requests_session.get(url, params=payload, stream=True)
+            r.raise_for_status()
+            data = np.asarray(json.loads(r.content.decode('utf-8')))
+            arrayedImage = pickle.loads(data[0])
+
+        return spotSpectra, arrayedImage
+
+
+    def download_file(self, filename, saveFilename=None):
+        """
+        Download the indicated file from OpenMSI
+
+        :param filename: The name of the file to be downloaded
+        :param saveFilename: The name of the file saved on disk
+        :return: Name of the file saved to disk
+        """
+        saveFilename = saveFilename if saveFilename is not None else os.path.basename(filename)
+        payload = {'format': 'HDF5', 'file': filename}
+        url = 'https://openmsi.nersc.gov/openmsi/qcube'
+        r = self.requests_session.get(url, params=payload, stream=True)
+        with open(saveFilename, 'wb') as outfile:
+            for chunk in r.iter_content(chunk_size=1024):
+                if chunk: # filter out keep-alive new chunks
+                    outfile.write(chunk)
+        return saveFilename
+
+
+    def upload_omaat_results(self, filename=None, session=None, machine='cori'):
+        """
+        Upload the given file to the OpenMSI website. The file will be generate
+        using saveToOpenMSIFile if it does not exist
+        :param filename: The name of the file to be uploaded. A dialog will be shown if set to None.
+        :param username: NERSC username
+        :param session: The request NERSC session with NEWT
+        :param machine: The machine at NERSC to which the file should be uploaded. (default='cori')
+        :return: Tuple with the:
+                * boolean indicating whether the file upload was successful,
+                * boolean indicating whether the setting of file permissions was successful
+                * boolean indicating whether the registration with OpenMSI was successful
+                * the NEWT session (or None if persist_session is False)
+        """
+        from omsi.shared.omsi_web_helper import WebHelper
+        from omsi.dataformat.omsi_file.main_file import omsi_file
+
+        # Determine the filename
+        if filename is None:
+            filename = input("Output filename: ")
+
+        # Check that the file is valid
+        if not omsi_file.is_valid_dataset(filename):
+            if os.path.exists(filename):
+                raise ValueError("The file is not a valid OpenMSI file")
+            else:
+                raise ValueError("The file does not seem to exsit.")
+
+        # Upload the file to nersc and register it with OpenMSIs
+        try:
+            upload_successful, permissions_successfull, register_successful, temps = \
+                WebHelper.upload_file_to_nersc(filepath=filename,
+                                               username=self.username,
+                                               register=True,
+                                               session=session,
+                                               persist_session=(session is not None),
+                                               machine=machine)
+        except ValueError as e:
+            if e.message == "Authentication failed.":
+                print("Authentication failed. Please try again.")
+                return {}
+            else:
+                raise
+        return upload_successful, permissions_successfull, register_successful, temps
 
 def login(username=""):
     """
