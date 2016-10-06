@@ -4,11 +4,11 @@ OpenMSI Arrayed Analysis Toolkit (OMAAT) is a new software package to analyze sp
 
 ## Capabilties
 
-* File selection,
-* Ion selection,
-* mask placement,
-* automatic marker position optimization,
-* visual representation, and
+* File selection
+* Ion selection
+* mask placement
+* automatic marker position optimization
+* visual representation
 * data export
 
 
