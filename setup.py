@@ -7,9 +7,10 @@ MAINTAINER = 'Ben Bowen'
 MAINTAINER_EMAIL = 'bpbowen@lbl.gov'
 URL = 'http://github.com/biorack/omaat'
 LICENSE = 'MIT'
-REQUIRES = ["numpy", "pandas", "dataset", "__future__", "buitins", "posixpath"
-"scipy", "matplotlib", "getpass", "json", "requests", "ipython", "ast", "abc", "sys",
-"datetime", "time", "pickle", "inspect", "future", "ipywidgets"]
+REQUIRES = ["numpy", "pandas", "dataset", "buitins", "posixpath",
+            "scipy", "matplotlib", "getpass", "json", "requests", 
+            "ipython", "ast", "abc", "sys", "datetime", "time",
+            "pickle", "inspect", "future", "ipywidgets"]
 
 CLASSIFIERS = """\
 Development Status :: 2 - Pre-Alpha
