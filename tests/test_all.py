@@ -1,4 +1,4 @@
-# import omaat_lib as omaat
+import omaat_lib as omaat
 
 def test_simplest_test():
 	pass
