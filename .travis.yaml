@@ -1,0 +1,31 @@
+language: python
+
+env:
+    - CONDA="python=2.7"
+    - CONDA="python=3.5"
+
+before_install:
+  - sudo apt-get update -qq;
+  - wget http://repo.continuum.io/miniconda/Miniconda-latest-Linux-x86_64.sh -O miniconda.sh;
+  - bash miniconda.sh -b -p $HOME/miniconda
+  - export PATH="$HOME/miniconda/bin:$PATH"
+  - hash -r
+  - conda config --set always_yes yes
+  - conda update conda
+  - conda info -a
+  - travis_retry conda create -n test $CONDA jupyter nose scipy pip
+  - source activate test
+  - travis_retry pip install coveralls
+
+install:
+  - export PYTHONWARNINGS=all
+  - python setup.py install
+
+script:
+    # run coverage on py2.7, regular on others
+  - which nosetests
+  - which python
+  - nosetests tests/test_all.py
+
+after_success:
+    - coveralls
