@@ -13,8 +13,9 @@ import numpy as np
 from scipy import interpolate
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-# import getpass
-# import json, requests
+import getpass
+import json
+import requests
 # import IPython.display
 # import ast
 # import abc
@@ -31,57 +32,57 @@ try:
 except ImportError:
     import IPython.html.widgets as ipywidgets
 
-class MassRangeReductionStrategy(with_metaclass(abc.ABCMeta, object)):
-    @abc.abstractmethod
-    def reduceImage(self,data):
-        pass
+# class MassRangeReductionStrategy(with_metaclass(abc.ABCMeta, object)):
+#     @abc.abstractmethod
+#     def reduceImage(self,data):
+#         pass
 
-    def remoteReduceOperation(self, **kwargs):
-        """
-        Return a string for performing the same reduction operational remotely as part of the data request
-        from OpenMSI. Return None in case remote execution is not supported.
-        """
-        return None
+#     def remoteReduceOperation(self, **kwargs):
+#         """
+#         Return a string for performing the same reduction operational remotely as part of the data request
+#         from OpenMSI. Return None in case remote execution is not supported.
+#         """
+#         return None
 
-    def supportsRemoteReduce(self):
-        return self.remoteReduceOperation() is not None
+#     def supportsRemoteReduce(self):
+#         return self.remoteReduceOperation() is not None
 
-class PeakArea(MassRangeReductionStrategy):
-    def reduceImage(self,data):
-        return np.sum(data,2)
-    def remoteReduceOperation(self, **kwargs):
-        return '[{"min_dim": 2, "reduction": "sum", "axis": -1}]'
+# class PeakArea(MassRangeReductionStrategy):
+#     def reduceImage(self,data):
+#         return np.sum(data,2)
+#     def remoteReduceOperation(self, **kwargs):
+#         return '[{"min_dim": 2, "reduction": "sum", "axis": -1}]'
 
-class PeakHeight(MassRangeReductionStrategy):
-    def reduceImage(self,data):
-        return np.max(data,2)
-    def remoteReduceOperation(self, **kwargs):
-        return '[{"min_dim": 2, "reduction": "max", "axis": -1}]'
+# class PeakHeight(MassRangeReductionStrategy):
+#     def reduceImage(self,data):
+#         return np.max(data,2)
+#     def remoteReduceOperation(self, **kwargs):
+#         return '[{"min_dim": 2, "reduction": "max", "axis": -1}]'
 
-class AreaNearPeak(MassRangeReductionStrategy):
-    """in stead of simply taking the sum or the max to get the "size" of a peak, this code finds the peak within a range and
-        sums the data points 'halfpeakwidth' to the left and to the right of the peak
-        if there is no peak, the boundary condition ends up being that it just takes the first halfpeakwidth+1 datapoints in the range
-        but if there is no peak, we assume this value is very low anyways"""
-    def __init__(self,halfpeakwidth=2):
-        self.halfpeakwidth=halfpeakwidth
+# class AreaNearPeak(MassRangeReductionStrategy):
+#     """in stead of simply taking the sum or the max to get the "size" of a peak, this code finds the peak within a range and
+#         sums the data points 'halfpeakwidth' to the left and to the right of the peak
+#         if there is no peak, the boundary condition ends up being that it just takes the first halfpeakwidth+1 datapoints in the range
+#         but if there is no peak, we assume this value is very low anyways"""
+#     def __init__(self,halfpeakwidth=2):
+#         self.halfpeakwidth=halfpeakwidth
 
-    def reduceImage(self,data):
-        result = np.zeros((data.shape[0],data.shape[1]))
-        maxMasses = np.argmax(data,2)
-        for x in range(data.shape[0]):
-            for y in range(data.shape[1]):
-                peak=(list(range(-self.halfpeakwidth,self.halfpeakwidth+1))+maxMasses[x,y]).astype(int)
-                for p in peak:
-                    if p<0:
-                        continue
-                    if p>= data.shape[2]:
-                        continue
-                    result[x,y]+=data[x,y,p]
-        return result
+#     def reduceImage(self,data):
+#         result = np.zeros((data.shape[0],data.shape[1]))
+#         maxMasses = np.argmax(data,2)
+#         for x in range(data.shape[0]):
+#             for y in range(data.shape[1]):
+#                 peak=(list(range(-self.halfpeakwidth,self.halfpeakwidth+1))+maxMasses[x,y]).astype(int)
+#                 for p in peak:
+#                     if p<0:
+#                         continue
+#                     if p>= data.shape[2]:
+#                         continue
+#                     result[x,y]+=data[x,y,p]
+#         return result
 
-    def remoteReduceOperation(self, **kwargs):
-        return '[{"min_dim": 2, "reduction": "area_near_peak", "halfpeakwidth": %s}]' % str(self.halfpeakwidth)
+#     def remoteReduceOperation(self, **kwargs):
+#         return '[{"min_dim": 2, "reduction": "area_near_peak", "halfpeakwidth": %s}]' % str(self.halfpeakwidth)
 
 class ArrayedImage(object):
     """
