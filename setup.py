@@ -10,7 +10,8 @@ LICENSE = 'MIT'
 REQUIRES = ["numpy", "pandas", "dataset", "buitins", "posixpath",
             "scipy", "matplotlib", "getpass", "json", "requests", 
             "ipython", "ast", "abc", "sys", "datetime", "time",
-            "pickle", "inspect", "future", "ipywidgets"]
+            "pickle", "future", "ipywidgets"]
+            
 
 CLASSIFIERS = """\
 Development Status :: 2 - Pre-Alpha
