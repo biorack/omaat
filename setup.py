@@ -30,6 +30,7 @@ Topic :: Software Development
 #         if line.startswith('__version__'):
 #             version = line.strip().split()[-1][1:-1]
 #             break
+from setuptools import setup, find_packages
 
 
 if __name__ == "__main__":
