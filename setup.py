@@ -8,7 +8,7 @@ MAINTAINER_EMAIL = 'bpbowen@lbl.gov'
 URL = 'http://github.com/biorack/omaat'
 LICENSE = 'MIT'
 REQUIRES = ["numpy", "pandas", "buitins", "posixpath",
-            "scipy", "matplotlib", "getpass", "json", "requests", 
+            "scipy", "matplotlib", "getpass", "requests", 
             "ipython", "future", "ipywidgets"]
 
 
