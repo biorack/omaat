@@ -9,7 +9,7 @@ URL = 'http://github.com/biorack/omaat'
 LICENSE = 'MIT'
 REQUIRES = ["numpy", "pandas", "buitins", "posixpath",
             "scipy", "matplotlib", "getpass", "json", "requests", 
-            "ipython", "ast", "abc", "datetime", "future", "ipywidgets"]
+            "ipython", "ast", "datetime", "future", "ipywidgets"]
 
 
 CLASSIFIERS = """\
