@@ -2,7 +2,7 @@
 """
 DISTNAME = 'omaat'
 DESCRIPTION = 'OpenMSI Arrayed Analysis Tools'
-LONG_DESCRIPTION = open('README.rst', 'rb').read().decode('utf-8')
+LONG_DESCRIPTION = open('README.md', 'rb').read().decode('utf-8')
 MAINTAINER = 'Ben Bowen'
 MAINTAINER_EMAIL = 'bpbowen@lbl.gov'
 URL = 'http://github.com/biorack/omaat'
