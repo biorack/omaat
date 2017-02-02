@@ -1,12 +1,6 @@
 from __future__ import print_function
 from __future__ import division
 from __future__ import unicode_literals
-# from builtins import zip
-# from builtins import chr
-# from builtins import str
-# from builtins import range
-# from builtins import object
-# from builtins import input
 
 import posixpath as path
 import numpy as np
@@ -1042,11 +1036,13 @@ def login(username=""):
         params = get_default_params()
         arrayed_analysis_default_username = params['arrayed_analysis_default_username']
         arrayed_analysis_default_username = input("NERSC username? leave blank for default (\"" + arrayed_analysis_default_username + "\") ") or arrayed_analysis_default_username
+        arrayed_analysis_default_username = arrayed_analysis_default_username.strip()
         params['arrayed_analysis_default_username'] = arrayed_analysis_default_username
         update_default_params(params)
 
     password = getpass.getpass(prompt="Enter password for user \"" + arrayed_analysis_default_username + "\"")
-
+    password = password.strip()
+    
     print("Attempting to log in...")
     sys.stdout.flush()
     newOpenMSIsession=OpenMSIsession(arrayed_analysis_default_username)
