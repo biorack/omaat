@@ -17,8 +17,8 @@ import pandas as pd
 import datetime
 import time
 import pickle
+import inspect
 
-# import inspect
 # import abc
 # from future.utils import with_metaclass
 
@@ -26,6 +26,13 @@ try:
     import ipywidgets
 except ImportError:
     import IPython.html.widgets as ipywidgets
+
+# Bind input to raw_input for python 2 compatibility
+# forces python2's input to return a string instead of executable
+try:
+   input = raw_input
+except NameError:
+   pass
 
 # class MassRangeReductionStrategy(with_metaclass(abc.ABCMeta, object)):
 #     @abc.abstractmethod
@@ -42,42 +49,49 @@ except ImportError:
 #     def supportsRemoteReduce(self):
 #         return self.remoteReduceOperation() is not None
 
-# class PeakArea(MassRangeReductionStrategy):
-#     def reduceImage(self,data):
-#         return np.sum(data,2)
-#     def remoteReduceOperation(self, **kwargs):
-#         return '[{"min_dim": 2, "reduction": "sum", "axis": -1}]'
+class PeakArea():
+    def reduceImage(self,data):
+        return np.sum(data,2)
+    def remoteReduceOperation(self, **kwargs):
+        return '[{"min_dim": 2, "reduction": "sum", "axis": -1}]'
+    def supportsRemoteReduce(self):
+        return self.remoteReduceOperation() is not None
 
-# class PeakHeight(MassRangeReductionStrategy):
-#     def reduceImage(self,data):
-#         return np.max(data,2)
-#     def remoteReduceOperation(self, **kwargs):
-#         return '[{"min_dim": 2, "reduction": "max", "axis": -1}]'
+class PeakHeight():
+    def reduceImage(self,data):
+        return np.max(data,2)
+    def remoteReduceOperation(self, **kwargs):
+        return '[{"min_dim": 2, "reduction": "max", "axis": -1}]'
+    def supportsRemoteReduce(self):
+        return self.remoteReduceOperation() is not None
 
-# class AreaNearPeak(MassRangeReductionStrategy):
-#     """in stead of simply taking the sum or the max to get the "size" of a peak, this code finds the peak within a range and
-#         sums the data points 'halfpeakwidth' to the left and to the right of the peak
-#         if there is no peak, the boundary condition ends up being that it just takes the first halfpeakwidth+1 datapoints in the range
-#         but if there is no peak, we assume this value is very low anyways"""
-#     def __init__(self,halfpeakwidth=2):
-#         self.halfpeakwidth=halfpeakwidth
+class AreaNearPeak():
+    """instead of simply taking the sum or the max to get the "size" of a peak, this code finds the peak within a range and
+        sums the data points 'halfpeakwidth' to the left and to the right of the peak
+        if there is no peak, the boundary condition ends up being that it just takes the first halfpeakwidth+1 datapoints in the range
+        but if there is no peak, we assume this value is very low anyways"""
+    def __init__(self,halfpeakwidth=2):
+        self.halfpeakwidth=halfpeakwidth
 
-#     def reduceImage(self,data):
-#         result = np.zeros((data.shape[0],data.shape[1]))
-#         maxMasses = np.argmax(data,2)
-#         for x in range(data.shape[0]):
-#             for y in range(data.shape[1]):
-#                 peak=(list(range(-self.halfpeakwidth,self.halfpeakwidth+1))+maxMasses[x,y]).astype(int)
-#                 for p in peak:
-#                     if p<0:
-#                         continue
-#                     if p>= data.shape[2]:
-#                         continue
-#                     result[x,y]+=data[x,y,p]
-#         return result
+    def reduceImage(self,data):
+        result = np.zeros((data.shape[0],data.shape[1]))
+        maxMasses = np.argmax(data,2)
+        for x in range(data.shape[0]):
+            for y in range(data.shape[1]):
+                peak=(list(range(-self.halfpeakwidth,self.halfpeakwidth+1))+maxMasses[x,y]).astype(int)
+                for p in peak:
+                    if p<0:
+                        continue
+                    if p>= data.shape[2]:
+                        continue
+                    result[x,y]+=data[x,y,p]
+        return result
 
-#     def remoteReduceOperation(self, **kwargs):
-#         return '[{"min_dim": 2, "reduction": "area_near_peak", "halfpeakwidth": %s}]' % str(self.halfpeakwidth)
+    def remoteReduceOperation(self, **kwargs):
+        return '[{"min_dim": 2, "reduction": "area_near_peak", "halfpeakwidth": %s}]' % str(self.halfpeakwidth)
+
+    def supportsRemoteReduce(self):
+        return self.remoteReduceOperation() is not None
 
 class ArrayedImage(object):
     """
@@ -881,6 +895,7 @@ class OpenMSIsession(object):
 
         newImage.baseImage = np.sum(newImage.imStack,2)
         print("Image has been loaded.")
+        print(newImage.baseImage.size)
         sys.stdout.flush()
         return newImage
 
@@ -1036,13 +1051,11 @@ def login(username=""):
         params = get_default_params()
         arrayed_analysis_default_username = params['arrayed_analysis_default_username']
         arrayed_analysis_default_username = input("NERSC username? leave blank for default (\"" + arrayed_analysis_default_username + "\") ") or arrayed_analysis_default_username
-        arrayed_analysis_default_username = arrayed_analysis_default_username.strip()
         params['arrayed_analysis_default_username'] = arrayed_analysis_default_username
         update_default_params(params)
 
     password = getpass.getpass(prompt="Enter password for user \"" + arrayed_analysis_default_username + "\"")
-    password = password.strip()
-    
+
     print("Attempting to log in...")
     sys.stdout.flush()
     newOpenMSIsession=OpenMSIsession(arrayed_analysis_default_username)

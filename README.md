@@ -44,6 +44,19 @@ jupyter notebook
 ```
 Or launch the notebook using the graphical Launcher tool from anaconda.
 
+## Testing
+
+Testing is performed using Travis-CI.  To reproduce a similar python environment to our [test](.travis.yml) from the omaat directory use:
+
+```
+>conda create -n omaat_python3 python=3.5 pytest pip numpy scipy jupyter matplotlib pandas
+# or
+>conda create -n omaat_python3 python=2.7 future pytest pip numpy scipy jupyter matplotlib pandas
+
+>source activate omaat_python3
+>python setup.py install
+>jupyter notebook
+```
 
 ## Publications
 

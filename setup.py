@@ -7,7 +7,7 @@ MAINTAINER = 'Ben Bowen'
 MAINTAINER_EMAIL = 'bpbowen@lbl.gov'
 URL = 'http://github.com/biorack/omaat'
 LICENSE = 'MIT'
-REQUIRES = ["numpy", "pandas", "scipy", "jupyter", "matplotlib","ipywidgets"]
+REQUIRES = ["numpy", "future", "pandas", "requests", "scipy", "jupyter", "matplotlib","ipywidgets"]
 # , "buitins", "posixpath",
 #             "scipy", "matplotlib", "getpass", "requests", 
 #             "ipython", "future", "ipywidgets"]
