@@ -11,8 +11,8 @@ before_install:
   - export PATH="$HOME/miniconda/bin:$PATH"
   - hash -r
   - conda config --set always_yes yes
-  - conda update conda
-  o- conda info -a
+  - conda update conda 
+  - conda info -a
   - travis_retry conda create -n test $CONDA pytest future pip numpy scipy jupyter matplotlib pandas requests
   - source activate test
   - travis_retry pip install coveralls
