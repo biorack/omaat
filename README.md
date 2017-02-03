@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/biorack/omaat.png?branch=master)](https://travis-ci.org/biorack/omaat)
+
 # OMAAT: OpenMSI Arrayed Analysis Tool
 
 OpenMSI Arrayed Analysis Toolkit (OMAAT) is a new software package to analyze spatially defined samples in mass spectrometry imaging (MSI). Previously, researchers would either go through the data manually or rely on expert computer algorithms for large-scale region-of-interest based analysis. By using a Jupyter notebook, OMAAT becomes easily accessible to anyone without programming experience and makes performing peak finding and peak integration and in spatially defined samples in MSI datasets straightforward. In combination with OpenMSI, an powerful platform for storing, sharing and analyzing spatially defined MSI data is created and promotes the use of MSI for analyzing large arrayed sample sets. This new capability will greatly enable the use of laser-desorption ionization mass spectrometry imaging as a modality for high throughput biomolecular analysis. 
