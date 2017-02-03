@@ -1,12 +1,6 @@
 from __future__ import print_function
 from __future__ import division
 from __future__ import unicode_literals
-from builtins import zip
-from builtins import chr
-from builtins import str
-from builtins import range
-from builtins import object
-from builtins import input
 
 import posixpath as path
 import numpy as np
@@ -14,52 +8,65 @@ from scipy import interpolate
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import getpass
-import json, requests
+import json
+import requests
 import IPython.display
 import ast
-import abc
 import sys
 import pandas as pd
 import datetime
 import time
 import pickle
 import inspect
-from future.utils import with_metaclass
+
+# import abc
+# from future.utils import with_metaclass
 
 try:
     import ipywidgets
 except ImportError:
     import IPython.html.widgets as ipywidgets
 
-class MassRangeReductionStrategy(with_metaclass(abc.ABCMeta, object)):
-    @abc.abstractmethod
-    def reduceImage(self,data):
-        pass
+# Bind input to raw_input for python 2 compatibility
+# forces python2's input to return a string instead of executable
+try:
+   input = raw_input
+except NameError:
+   pass
 
-    def remoteReduceOperation(self, **kwargs):
-        """
-        Return a string for performing the same reduction operational remotely as part of the data request
-        from OpenMSI. Return None in case remote execution is not supported.
-        """
-        return None
+# class MassRangeReductionStrategy(with_metaclass(abc.ABCMeta, object)):
+#     @abc.abstractmethod
+#     def reduceImage(self,data):
+#         pass
 
-    def supportsRemoteReduce(self):
-        return self.remoteReduceOperation() is not None
+#     def remoteReduceOperation(self, **kwargs):
+#         """
+#         Return a string for performing the same reduction operational remotely as part of the data request
+#         from OpenMSI. Return None in case remote execution is not supported.
+#         """
+#         return None
 
-class PeakArea(MassRangeReductionStrategy):
+#     def supportsRemoteReduce(self):
+#         return self.remoteReduceOperation() is not None
+
+class PeakArea():
     def reduceImage(self,data):
         return np.sum(data,2)
     def remoteReduceOperation(self, **kwargs):
         return '[{"min_dim": 2, "reduction": "sum", "axis": -1}]'
+    def supportsRemoteReduce(self):
+        return self.remoteReduceOperation() is not None
 
-class PeakHeight(MassRangeReductionStrategy):
+class PeakHeight():
     def reduceImage(self,data):
         return np.max(data,2)
     def remoteReduceOperation(self, **kwargs):
         return '[{"min_dim": 2, "reduction": "max", "axis": -1}]'
+    def supportsRemoteReduce(self):
+        return self.remoteReduceOperation() is not None
 
-class AreaNearPeak(MassRangeReductionStrategy):
-    """in stead of simply taking the sum or the max to get the "size" of a peak, this code finds the peak within a range and
+class AreaNearPeak():
+    """instead of simply taking the sum or the max to get the "size" of a peak, this code finds the peak within a range and
         sums the data points 'halfpeakwidth' to the left and to the right of the peak
         if there is no peak, the boundary condition ends up being that it just takes the first halfpeakwidth+1 datapoints in the range
         but if there is no peak, we assume this value is very low anyways"""
@@ -82,6 +89,9 @@ class AreaNearPeak(MassRangeReductionStrategy):
 
     def remoteReduceOperation(self, **kwargs):
         return '[{"min_dim": 2, "reduction": "area_near_peak", "halfpeakwidth": %s}]' % str(self.halfpeakwidth)
+
+    def supportsRemoteReduce(self):
+        return self.remoteReduceOperation() is not None
 
 class ArrayedImage(object):
     """
@@ -885,6 +895,7 @@ class OpenMSIsession(object):
 
         newImage.baseImage = np.sum(newImage.imStack,2)
         print("Image has been loaded.")
+        print(newImage.baseImage.size)
         sys.stdout.flush()
         return newImage
 
