@@ -14,7 +14,7 @@ OpenMSI Arrayed Analysis Toolkit (OMAAT) is a new software package to analyze sp
 
 ## Installation and Requirements
 
-OMAAT is written as a Python module and released as an open-source project under BSD license #... . 
+OMAAT is written as a Python module and primarity tested using the Anaconda Python distribution.  To exactly reproduce our test environment, see the distribution and packages [here](.travis.yml) and [here](setup.py).
 
 Anaconda comes bundled with many python packages useful for data analysis.  If you already have Anaconda, make sure your packages are up to date.  OMAAT requires Jupyter version 4.1+ and python version 2.7+ or 3.2+. We recommend using the Anaconda distribution of python available here: https://www.continuum.io/downloads.
 
@@ -44,6 +44,8 @@ jupyter notebook
 ```
 Or launch the notebook using the graphical Launcher tool from anaconda.
 
+Python packages are constantly being updated.  Please contact us by placing a ticket here in github if you have any trouble using or installing omaat.
+
 ## Testing
 
 Testing is performed using Travis-CI.  To reproduce a similar python environment to our [test](.travis.yml) from the omaat directory use:
@@ -51,11 +53,14 @@ Testing is performed using Travis-CI.  To reproduce a similar python environment
 ```
 >conda create -n omaat_python3 python=3.5 pytest pip numpy scipy jupyter matplotlib pandas
 # or
->conda create -n omaat_python3 python=2.7 future pytest pip numpy scipy jupyter matplotlib pandas
+>conda create -n omaat_python2 python=2.7 future pytest pip numpy scipy jupyter matplotlib pandas
 
 >source activate omaat_python3
+# or
+>source activate omaat_python2
+
 >python setup.py install
->jupyter notebook
+>pytest test/test_all.py
 ```
 
 ## Publications
