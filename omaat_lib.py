@@ -453,9 +453,7 @@ class ArrayedImage(object):
 
 
     def optimizeSpots_with_dialogs(self):
-        #xCenters and yCenters are required here and elsewhere. 
-        self.get_xy_centers() #They must be calculated from either the rough or fine position handles
-        
+
         params = get_default_params()
 
         arrayed_analysis_radius = params['arrayed_analysis_radius']
@@ -494,6 +492,8 @@ class ArrayedImage(object):
         IPython.display.display(displayBox)
 
         def do_calculate(widget):
+            self.get_xy_centers()
+
             results=[]
             ionweights=[]
             imWidth=self.imStack.shape[1]
@@ -938,13 +938,18 @@ class OpenMSIsession(object):
         rangeBox=ipywidgets.HBox(children=(ipywidgets.HTML("Determine m/z +/- range to consider:&nbsp"),rangeCheckBox,rangeNumber))
         reductionCheckBox=ipywidgets.RadioButtons(options=["Sum of all data points in mass range (i.e., area under the curve)","Max data point in range (i.e. peak height)","n data points around the max"])
         Ndatapoints=ipywidgets.BoundedIntText(description="number of data points",value=2)
-        Ndatapoints.visible=False
+        #Ndatapoints.visible=False
         def obs(widget):
-            Ndatapoints.visible=(reductionCheckBox.value=="n data points around the max")
+            try:
+                Ndatapoints.layout.visibility=("visible" if reductionCheckBox.value=="n data points around the max" else "hidden")
+            except AttributeError:
+                Ndatapoints.visible=(reductionCheckBox.value=="n data points around the max")
         try:
             reductionCheckBox.observe(obs)
         except AttributeError:
             reductionCheckBox.on_trait_change(obs)
+
+        obs(Ndatapoints)
 
         reductionBox=ipywidgets.HBox(children=(ipywidgets.HTML("Mass range reduction strategy:&nbsp"),reductionCheckBox,Ndatapoints))
 
