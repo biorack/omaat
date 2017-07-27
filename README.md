@@ -67,7 +67,7 @@ Testing is performed using Travis-CI.  To reproduce a similar python environment
 
 ## Publications
 
-*[[Markus de Raad, Tristan de Rond, Oliver Rübe, Jay D. Keasling, Trent R. Northen, and Benjamin P. Bowen, "OpenMSI Arrayed Analysis Toolkit: Analyzing Spatially Defined Samples Using Mass Spectrometry Imaging" Anal. Chem., 2017, 89 (11), pp 5818–5823]](http://pubs.acs.org/doi/abs/10.1021/acs.analchem.6b05004)
+*[Markus de Raad, Tristan de Rond, Oliver Rübe, Jay D. Keasling, Trent R. Northen, and Benjamin P. Bowen, "OpenMSI Arrayed Analysis Toolkit: Analyzing Spatially Defined Samples Using Mass Spectrometry Imaging" Anal. Chem., 2017, 89 (11), pp 5818–5823](http://pubs.acs.org/doi/abs/10.1021/acs.analchem.6b05004)
 DOI: 10.1021/acs.analchem.6b05004
 
 The data format for storage of MSI data is described in the following publication:
