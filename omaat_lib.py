@@ -142,15 +142,15 @@ class ArrayedImage(object):
     def get_xy_centers(self):
         '''
         A generalized approach to setting the x and y centers:
-        
+
         Start off by checking if xCenters is none.  if yes, then get it from handles
         if no, then you are all set.
-     
-        if fine positioning has been done, than the centers are extracted from 
+
+        if fine positioning has been done, than the centers are extracted from
         the graphics handles of the drawing objects for fine positioning
-        
+
         if fine positioning has not been done, but rough positioning has
-        then the x and y centers are taken from the rough positioning handles to the 
+        then the x and y centers are taken from the rough positioning handles to the
         interior points.  these are stored redundantly for each handle object.
 
         if neither rough or fine positioning has been done and xCenters does not
@@ -165,7 +165,7 @@ class ArrayedImage(object):
         elif self.fine_position_draw_points is not None:
             self.xCenters = [c.point.center[0] for c in self.fine_position_draw_points]
             self.yCenters = [c.point.center[1] for c in self.fine_position_draw_points]
-            return     
+            return
         elif self.rough_position_draw_points is not None:
             self.xCenters = self.rough_position_draw_points[0].h1.get_xdata()
             self.yCenters = self.rough_position_draw_points[0].h1.get_ydata()
@@ -251,7 +251,7 @@ class ArrayedImage(object):
         :return: no return value.
         """
 
-        
+
         #xCenters and yCenters are required here and elsewhere.
         self.get_xy_centers()
         xRough=self.xCenters
@@ -296,14 +296,14 @@ class ArrayedImage(object):
         arrayed_analysis_columns = params['arrayed_analysis_columns']
         arrayed_analysis_rows = params['arrayed_analysis_rows']
         arrayed_analysis_offset = params['arrayed_analysis_offset']
- 
+
         arrayed_analysis_columns = int(input("Number of columns? leave blank for default (\"{:d}\") ".format(arrayed_analysis_columns)) or arrayed_analysis_columns)
         arrayed_analysis_rows = int(input("Number of rows? leave blank for default (\"{:d}\") ".format(arrayed_analysis_rows)) or arrayed_analysis_rows)
         arrayed_analysis_offset = float(input("Hexagonal Offset? This shifts every other line by this many spots. leave blank for default (\"{:f}\") ".format(arrayed_analysis_offset)) or arrayed_analysis_offset)
- 
+
         params['arrayed_analysis_columns'] = arrayed_analysis_columns
         params['arrayed_analysis_rows'] = arrayed_analysis_rows
-        params['arrayed_analysis_offset'] = arrayed_analysis_offset  
+        params['arrayed_analysis_offset'] = arrayed_analysis_offset
 
         update_default_params(params)
 
@@ -365,8 +365,8 @@ class ArrayedImage(object):
                              location. If there are spots missing in the grid, you may want to set this. Default is 0.
         :return: no return value
         """
-        
-        #xCenters and yCenters are required here and elsewhere. 
+
+        #xCenters and yCenters are required here and elsewhere.
         self.get_xy_centers() #They must be calculated from either the rough or fine position handles
 
         if not overlapDistance_squared:
@@ -512,10 +512,10 @@ class ArrayedImage(object):
         def do_optimize(widget):
             arrayed_analysis_radius=integrationRadiusBox.value
             arrayed_analysis_minScore=minScoreBox.value
-            
+
             params['arrayed_analysis_radius'] = arrayed_analysis_radius
             params['arrayed_analysis_minScore'] = arrayed_analysis_minScore
-            
+
             update_default_params(params)
 
             ionweights=[]
@@ -540,7 +540,7 @@ class ArrayedImage(object):
         of each spot.
         '''
 
-        #xCenters and yCenters are required here and elsewhere. 
+        #xCenters and yCenters are required here and elsewhere.
         self.get_xy_centers() #They must be calculated from either the rough or fine position handles
 
         params = get_default_params()
@@ -769,7 +769,7 @@ class OpenMSIsession(object):
 
     def getFilelist(self):
         payload = {'format':'JSON','mtype':'filelistView'}
-        url = 'https://openmsi.nersc.gov/openmsi/qmetadata'
+        url = 'https://openmsi.nersc.gov/qmetadata'
         r = self.requests_session.get(url,params=payload)
         r.raise_for_status()
         fileList = json.loads(r.content.decode('utf-8'))
@@ -851,7 +851,7 @@ class OpenMSIsession(object):
             self.filename = path.join('/project/projectdirs/openmsi/omsi_data_private/',self.filename)
 
         payload = {'file':self.filename,'format':'JSON','mtype':'file','expIndex':expIndex,'dataIndex':dataIndex}
-        url = 'https://openmsi.nersc.gov/openmsi/qmetadata'
+        url = 'https://openmsi.nersc.gov/qmetadata'
         r = self.requests_session.get(url,params=payload)
         r.raise_for_status()
         metadata = json.loads(r.content.decode('utf-8'))
@@ -878,7 +878,7 @@ class OpenMSIsession(object):
                        }
             if reduceOnServer:
                 payload['operations'] = massRangeReductionStrategy.remoteReduceOperation()
-            url = 'https://openmsi.nersc.gov/openmsi/qcube'
+            url = 'https://openmsi.nersc.gov/qcube'
             #if verbose:
             #    print(payload)
             r = self.requests_session.get(url,params=payload)
@@ -1019,7 +1019,7 @@ class OpenMSIsession(object):
           'qslice_viewerOption':'0',
           'col':0,'row':0,
           'findPeak':'0','format':'JSON'}
-        url = 'https://openmsi.nersc.gov/openmsi/qmz'
+        url = 'https://openmsi.nersc.gov/qmz'
         r = self.requests_session.get(url,params=payload)
         r.raise_for_status()
         data = json.loads(r.text)
@@ -1031,7 +1031,7 @@ class OpenMSIsession(object):
                       'expIndex':img.expIndex,'dataIndex':img.dataIndex,'qspectrum_viewerOption':'0',
                   'qslice_viewerOption':'0','operations':'[{"reduction":"mean","axis":0,"min_dim":2}]',
                       'findPeak':'0','format':'JSON'}
-        url = 'https://openmsi.nersc.gov/openmsi/qspectrum'
+        url = 'https://openmsi.nersc.gov/qspectrum'
 
         for i,coord in enumerate(_spotList):
             payload['col'] = '[' + ','.join([str(c[1]) for c in coord]) + ']'
@@ -1064,7 +1064,7 @@ def login(username=""):
     print("Attempting to log in...")
     sys.stdout.flush()
     newOpenMSIsession=OpenMSIsession(arrayed_analysis_default_username)
-    authURL = 'https://openmsi.nersc.gov/openmsi/client/login'
+    authURL = 'https://openmsi.nersc.gov/client/login'
     # Retrieve the CSRF token first
     r= newOpenMSIsession.requests_session.get(authURL)  # sets
     r.raise_for_status()
@@ -1087,7 +1087,7 @@ def getMZ(client,filename,expIndex,dataIndex):
           'qslice_viewerOption':'0',
           'col':0,'row':0,
           'findPeak':'0','format':'JSON'}
-    url = 'https://openmsi.nersc.gov/openmsi/qmz'
+    url = 'https://openmsi.nersc.gov/qmz'
     r = client.get(url,params=payload)
     r.raise_for_status()
     data = json.loads(r.content.decode('utf-8'))
@@ -1182,7 +1182,7 @@ class DraggablePoint(object):
         #self.point.set_facecolor('c')
         canvas = self.point.figure.canvas
         axes = self.point.axes
-        
+
         # restore the background region
         canvas.restore_region(self.background)
 
@@ -1255,10 +1255,10 @@ class DraggablePointForBarycentricInterpolation(object):
         dy = event.ydata - ypress
         self.point.center = (self.point.center[0]+dx, self.point.center[1]+dy)
         self.annotation.set_position(self.point.center)
-        
+
         canvas = self.point.figure.canvas
         axes = self.point.axes
-        
+
         # restore the background region
         canvas.restore_region(self.background)
 
@@ -1266,19 +1266,19 @@ class DraggablePointForBarycentricInterpolation(object):
         axes.draw_artist(self.point)
         # blit just the redrawn area
         canvas.blit(axes.bbox)
-        
+
         p = []
         for d in self.ax.patches:
             p.append(d.center)
         p = np.asarray(p)
-        
+
         xi,yi = barycentric_trapezoidial_interpolation(self.Nx,self.Ny,p,hexagonalOffset = self.hexagonalOffset)
 
         self.h1.set_xdata(xi)
         self.h1.set_ydata(yi)
 
         #self.point.figure.canvas.draw()
-        
+
     def on_release(self, event):
         'on release we reset the press data'
         if DraggablePointForBarycentricInterpolation.lock is not self:
@@ -1329,10 +1329,10 @@ def barycentric_trapezoidial_interpolation(Nx,Ny,p,hexagonalOffset=0.5):
         xi,yi = barycentric_trapezoidial_interpolation(Nx,Ny,newCoords)
         a.plot(xi,yi,'.',markersize=12)
     plt.show()
-    '''     
+    '''
     x_basis = np.linspace(0,1,Nx)
     y_basis = np.linspace(0,1,Ny)
-        
+
     px = [[p[0,0], p[2,0]],[p[1,0], p[3,0]]] #these are the [2,2] x-coordinates
     py = [[p[0,1], p[2,1]],[p[1,1], p[3,1]]] #these are the [2,2] y-coordinates
     fx = interpolate.interp2d([0,1], [0,1], px, kind='linear')
